@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-tVewP3tKXi7Wq3EwKy779jDX8boePLn+xYQtKu6+g2s='; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src blob: data:; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'">
+  <title>Desktop companion</title>
+  <link rel="stylesheet" href="overlay.css">
+  <script type="importmap">{"imports":{"three":"../node_modules/three/build/three.module.js","three/addons/":"../node_modules/three/examples/jsm/","@pixiv/three-vrm":"../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"}}</script>
+  <script type="module" src="overlay.js"></script>
+</head>
+<body>
+  <canvas id="avatar-canvas" aria-label="Your desktop companion. Drag to move, click the head to pat, or right-click for settings."></canvas>
+  <section id="speech-bubble" class="speech-bubble" aria-live="polite" hidden><button id="dismiss-bubble" type="button" aria-label="Dismiss caption">×</button><p id="speech-text"></p><span id="speech-detail"></span></section>
+  <div id="pat-heart" class="pat-heart" aria-hidden="true">♡</div>
+  <div id="overlay-error" class="overlay-error" role="alert" hidden></div>
+  <div id="overlay-controls" class="overlay-controls">
+    <div class="identity"><span id="state-dot" class="state-dot"></span><strong id="companion-name">Companion</strong><span id="pose-label">Starting…</span></div>
+    <div id="avatar-type" class="avatar-type">Prototype avatar</div>
+    <div class="control-buttons"><button id="open-settings" type="button" title="Open settings" aria-label="Open settings">⚙</button><button id="pause-companion" type="button" title="Pause everything" aria-label="Pause everything">Ⅱ</button><button id="hide-companion" type="button" title="Hide character" aria-label="Hide character">−</button><button id="quit-companion" type="button" title="Quit companion" aria-label="Quit companion">×</button></div>
+  </div>
+</body>
+</html>

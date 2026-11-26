@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>Companion · Desktop studio</title>
+  <link rel="stylesheet" href="settings.css">
+  <script defer src="settings.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><div><strong>Companion</strong><span>DESKTOP STUDIO</span></div></div>
+      <div class="nav-label">YOUR SPACE</div>
+      <nav class="navigation" aria-label="Settings sections">
+        <button type="button" class="nav-item active" data-tab="chat" aria-current="page"><span aria-hidden="true">◌</span>Chat</button>
+        <button type="button" class="nav-item" data-tab="connections"><span aria-hidden="true">⌘</span>AI connections</button>
+        <button type="button" class="nav-item" data-tab="privacy"><span aria-hidden="true">◇</span>Desktop privacy</button>
+        <button type="button" class="nav-item" data-tab="character"><span aria-hidden="true">✧</span>Character</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="companion-card"><div class="small-orb" aria-hidden="true"></div><strong id="sidebar-name">Companion</strong><span id="sidebar-mode">Loading preferences…</span></div>
+        <button id="pause-all" type="button" class="button secondary full">Pause everything</button>
+        <button id="toggle-overlay" type="button" class="button quiet full">Show / hide character</button>
+        <div class="sidebar-foot"><span class="status-dot" id="local-dot"></span><span id="local-summary">Starting…</span><button id="quit-app" type="button">Quit</button></div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="page-header"><div><p class="eyebrow">A LITTLE COMPANY. ON YOUR TERMS.</p><h1 id="page-title">Let's talk.</h1><p id="page-subtitle">Your character, your choice of AI, your desktop.</p></div><span class="prototype-badge">DEVELOPMENT BUILD</span></header>
+      <div id="app-status" class="notice" role="status" aria-live="polite" hidden></div>
+
+      <section id="panel-chat" class="tab-panel" aria-labelledby="page-title">
+        <div class="chat-route"><div><span class="status-dot"></span><strong id="chat-profile">No AI selected</strong><span id="chat-model">Add a connection to begin</span></div><button type="button" class="text-button" data-go="connections">Change connection ↗</button></div>
+        <div class="chat-panel">
+          <div class="chat-panel-top"><span>CONVERSATION</span><button id="clear-chat" type="button" class="text-button">Clear chat</button></div>
+          <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
+          <div id="chat-empty" class="chat-empty"><div class="welcome-orb" aria-hidden="true"><i></i></div><h2>A familiar face.<br>A fresh conversation.</h2><p>Pick an AI connection, then say hello.<br>Your chat stays in memory until you clear it or close the app.</p><div class="prompt-chips"><button type="button" data-prompt="Hi! Let's get to know each other.">Say hello</button><button type="button" data-prompt="Help me think through what I want to do today.">Plan my day</button></div></div>
+          <form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-input">Message your companion</label><textarea id="chat-input" rows="2" maxlength="12000" placeholder="Tell me what's on your mind…"></textarea><div class="composer-bottom"><span id="chat-send-note">Text goes only to your selected connection.</span><div><button id="cancel-reply" type="button" class="button secondary small" hidden>Stop</button><button id="send-message" type="submit" class="button primary small">Send <span aria-hidden="true">↗</span></button></div></div></form>
+        </div>
+        <p class="footnote">Changing AI connections starts a separate conversation. There is no automatic provider fallback.</p>
+      </section>
+
+      <section id="panel-connections" class="tab-panel" hidden aria-labelledby="page-title">
+        <label class="setting-row local-only-row"><span class="setting-icon" aria-hidden="true">⌂</span><span class="setting-copy"><strong>Keep AI on this computer</strong><span>Use local Ollama or LM Studio models only. Hosted connections remain saved but cannot be used.</span></span><input id="local-only" class="switch" type="checkbox" role="switch"></label>
+        <div class="connection-layout">
+          <section class="card profile-list-card"><div class="section-heading"><h2>Saved profiles</h2><button id="new-connection" type="button" class="round-button" aria-label="Add a connection">+</button></div><div id="connection-list" class="connection-list"></div><p class="muted small-copy">Save separate profiles for different services, endpoints, or models.</p></section>
+          <section class="card connection-editor"><div class="section-heading"><div><p class="eyebrow">YOUR AI, YOUR CHOICE</p><h2 id="connection-editor-title">Add a connection</h2></div><span id="connection-kind" class="tag">Profile</span></div>
+            <form id="connection-form" autocomplete="off">
+              <div class="field-grid"><label class="field"><span>Profile name</span><input id="connection-name" maxlength="80" placeholder="My everyday companion" required></label><label class="field"><span>Provider</span><select id="connection-provider" required></select></label></div>
+              <label class="field"><span>API endpoint</span><input id="connection-url" type="url" spellcheck="false" placeholder="https://…" required><small id="endpoint-hint">Requests go to this exact endpoint.</small></label>
+              <label class="field"><span>API key <span id="key-state" class="inline-label"></span></span><input id="connection-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Enter a key if this endpoint requires one"><small id="key-hint">Your key is cleared from this field after saving.</small></label>
+              <label id="remove-key-row" class="check-row" hidden><input id="remove-key" type="checkbox">Remove the saved key from this profile</label>
+              <div class="model-heading"><label for="connection-model">Model</label><button id="discover-models" type="button" class="text-button">Discover models ↻</button></div>
+              <input id="connection-model" list="model-options" maxlength="512" spellcheck="false" placeholder="Enter a model ID or discover models"><datalist id="model-options"></datalist><p id="model-discovery-status" class="field-help">You can save without a model, discover available models, then choose one.</p>
+              <label class="check-row"><input id="connection-vision" type="checkbox"><span>This model accepts images <small>Required for describing a selected window. Model discovery does not verify image support.</small></span></label>
+              <details class="advanced-options"><summary>Advanced options</summary><div class="field-grid"><label class="field"><span>Workspace / project ID</span><input id="connection-workspace" spellcheck="false" placeholder="Optional"></label><label class="field"><span>Anthropic API version</span><input id="connection-version" spellcheck="false" placeholder="Use provider default"></label></div></details>
+              <div class="form-actions"><button id="delete-connection" type="button" class="text-button danger" hidden>Remove profile</button><button id="save-connection" type="submit" class="button primary">Save &amp; use profile</button></div>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <section id="panel-privacy" class="tab-panel" hidden aria-labelledby="page-title">
+        <div class="mode-banner"><div><h2>Set the mood. Keep your boundaries.</h2><p>Protected apps stay protected in every mode.</p></div><div class="mode-picker" aria-label="Desktop mode"><button id="work-mode" type="button">Work</button><button id="play-mode" type="button">Play</button><span id="custom-mode">Custom</span></div></div>
+        <div class="card capabilities-card">
+          <label class="setting-row"><span class="setting-icon" aria-hidden="true">▱</span><span class="setting-copy"><strong>React to window layout</strong><span>Use approved window edges as places to sit and react when those windows move.</span></span><input id="react-to-windows" class="switch" type="checkbox" role="switch"></label>
+          <label class="setting-row"><span class="setting-icon" aria-hidden="true">◎</span><span class="setting-copy"><strong>See window contents</strong><span>Describe a window you select, only when you request it and its app rule allows it.</span></span><input id="see-window-contents" class="switch" type="checkbox" role="switch"></label>
+          <label class="setting-row"><span class="setting-icon" aria-hidden="true">↗</span><span class="setting-copy"><strong>Manage windows</strong><span>Your controls can move, resize, restore, or minimize approved windows. AI replies cannot run actions.</span></span><input id="manage-windows" class="switch" type="checkbox" role="switch"></label>
+        </div>
+        <p class="footnote">Work switches all three off. Play restores your previous choices. Changing a switch creates a custom mode.</p>
+        <div id="native-status" class="notice subtle"></div>
+
+        <section class="card"><div class="section-heading"><div><p class="eyebrow">CHOOSE A TARGET</p><h2>Open windows</h2></div><button id="refresh-windows" type="button" class="button secondary small">Refresh windows</button></div><p class="muted small-copy">Window titles are shown here to help you choose. Selecting a window does not send a screenshot.</p><div class="window-selector"><label class="sr-only" for="window-list">Open window</label><select id="window-list"><option value="">Refresh to list open windows</option></select><button id="select-window" type="button" class="button secondary">Select</button></div><div id="selected-window-details" class="selected-window-details"><strong>No window selected</strong></div></section>
+
+        <section class="card"><div class="section-heading"><div><p class="eyebrow">PER-APP PERMISSIONS</p><h2>Access is always your choice.</h2></div><button id="add-window-rule" type="button" class="button secondary small">Add selected app</button></div><p class="muted small-copy">New apps have no access. Protect work apps to block all three abilities, even in Play mode.</p><div class="rules-table-wrap"><table class="rules-table"><thead><tr><th scope="col">Application</th><th scope="col">Protected</th><th scope="col">Layout</th><th scope="col">Contents</th><th scope="col">Actions</th></tr></thead><tbody id="app-rules"></tbody></table></div><p id="rules-empty" class="empty-copy">Select a window, then add its app to configure access.</p><p class="footnote">An app rule covers that executable. For browsers that mix work and personal tabs, keep contents off or protect the browser.</p></section>
+
+        <div class="privacy-tools">
+          <section class="card"><div class="section-heading"><div><p class="eyebrow">ONE WINDOW · ONE REQUEST</p><h2>Ask about this window</h2></div></div><label class="field"><span>Your question</span><textarea id="window-question" rows="2" maxlength="4000" placeholder="What is shown in this window?"></textarea></label><div class="destination-box"><span>SCREENSHOT DESTINATION</span><strong id="vision-destination">No AI connection selected</strong><small id="vision-endpoint">Select a profile with image support.</small></div><p id="vision-permission" class="field-help"></p><button id="describe-window" type="button" class="button primary full">Describe selected window</button><div id="vision-result" class="vision-result" aria-live="polite" hidden></div><p class="footnote">Only isolated selected-window capture is allowed. There is no full-desktop fallback, and screenshots are not added to chat history.</p></section>
+          <section class="card"><div class="section-heading"><div><p class="eyebrow">YOU GIVE THE COMMAND</p><h2>Arrange this window</h2></div></div><p id="action-permission" class="field-help"></p><div class="action-controls" id="window-action-controls"><div class="move-controls"><button type="button" data-move="0,-60" aria-label="Move window up">↑</button><button type="button" data-move="-80,0" aria-label="Move window left">←</button><span aria-hidden="true">MOVE</span><button type="button" data-move="80,0" aria-label="Move window right">→</button><button type="button" data-move="0,60" aria-label="Move window down">↓</button></div><div class="resize-controls"><label class="field"><span>Width</span><input id="window-width" type="number" min="200" max="10000" step="10" value="1000"></label><span aria-hidden="true">×</span><label class="field"><span>Height</span><input id="window-height" type="number" min="150" max="10000" step="10" value="700"></label><button id="resize-window" type="button" class="button secondary small">Resize</button></div><div class="button-row"><button id="minimize-window" type="button" class="button secondary small">Minimize</button><button id="restore-window" type="button" class="button secondary small">Restore</button><button id="undo-window" type="button" class="text-button">Undo last action</button></div></div><p class="footnote">The target is rechecked before each action. Closing windows and typing into other apps are not included.</p></section>
+        </div>
+      </section>
+
+      <section id="panel-character" class="tab-panel" hidden aria-labelledby="page-title">
+        <div class="character-layout"><section class="card avatar-card"><div class="avatar-illustration" aria-hidden="true"><div class="avatar-orbit"></div><div class="avatar-face"><i></i><i></i></div><span>✦</span></div><span id="avatar-badge" class="tag">PROTOTYPE AVATAR</span><h2 id="avatar-name">Your character starts here.</h2><p id="avatar-description" class="muted">A simple procedural 3D stand-in is included. Import your own VRM to give your companion a look.</p><button id="import-avatar" type="button" class="button primary full">Import a VRM avatar</button><button id="preview-avatar" type="button" class="button quiet full">Show / hide on desktop</button><p class="footnote">Choose a self-contained .vrm model you own or have permission to use. External model assets are not loaded.</p></section>
+          <section class="card"><div class="section-heading"><div><p class="eyebrow">MAKE HER YOURS</p><h2>A little personality.</h2></div></div><form id="character-form"><label class="field"><span>Name</span><input id="character-name" maxlength="60" required></label><label class="field"><span>Personality</span><textarea id="character-personality" rows="6" maxlength="6000" placeholder="Warm, curious, gently playful…"></textarea><small>Describe how your companion should speak and behave in conversation.</small></label><label class="field"><span>Playfulness</span><select id="character-playfulness"><option value="quiet">Calm · subtle movements</option><option value="balanced">Balanced · a little character</option><option value="playful">Playful · more expressive</option></select><small>Changes animation intensity. It never grants desktop permissions.</small></label><label class="check-row"><input id="character-speech" type="checkbox"><span>Read replies aloud <small>Uses an installed local system voice when available. Microphone input is not included in this prototype.</small></span></label><div class="form-actions"><button type="submit" class="button primary">Save character</button></div></form></section>
+        </div><div class="hint-strip"><span aria-hidden="true">✧</span><p>On the desktop, drag your character to move her, click her head to pat, or right-click to open settings.</p></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
