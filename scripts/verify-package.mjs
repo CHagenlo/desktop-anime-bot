@@ -13,6 +13,8 @@ const archive = path.join(directory, 'resources', 'app.asar');
 const unpackedOnly = process.argv.includes('--unpacked-only');
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
 const appFiles = new Set(listPackage(archive).map(file => file.replace(/^[/\\]+/, '').replace(/\\/g, '/')));
+// ASAR's lookup splits directories on the host separator, while module IDs use forward slashes.
+const readPackagedFile = file => extractFile(archive, path.normalize(file));
 const requireFile = file => {
   if (!appFiles.has(file)) throw new Error('The packaged application is missing ' + file);
 };
@@ -29,7 +31,7 @@ for (const file of appFiles) {
     throw new Error('A development or runtime-only file was included in the app: ' + file);
   }
 }
-const packedManifest = JSON.parse(extractFile(archive, 'package.json').toString('utf8'));
+const packedManifest = JSON.parse(readPackagedFile('package.json').toString('utf8'));
 if (packedManifest.version !== manifest.version || packedManifest.main !== manifest.main) throw new Error('Packaged version or entry point differs from the source.');
 
 // Resolve the actual renderer module graph inside app.asar. This catches omitted addon dependencies.
@@ -44,7 +46,7 @@ while (pending.length) {
   const file = pending.pop();
   if (checked.has(file)) continue;
   requireFile(file); checked.add(file);
-  const source = extractFile(archive, file).toString('utf8');
+  const source = readPackagedFile(file).toString('utf8');
   const [imports] = parse(source, file);
   for (const entry of imports) {
     // Nonliteral dynamic imports cannot be resolved statically; Electron's runtime smoke covers startup.
