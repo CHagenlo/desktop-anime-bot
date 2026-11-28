@@ -9,13 +9,15 @@ const { prepareSmoke } = require('./smoke.cjs');
 const ROOT = path.resolve(__dirname, '..');
 const SETTINGS_URL = pathToFileURL(path.join(ROOT, 'renderer/settings.html')).href;
 const OVERLAY_URL = pathToFileURL(path.join(ROOT, 'renderer/overlay.html')).href;
-let settingsWindow, overlayWindow, tray, service, cursorTimer, perchTimer;
+let settingsWindow, overlayWindow, tray, service, speechController, cursorTimer, perchTimer;
 let dragging = null, perchAttached = true, polling = false, priorHandle = null, priorReact = false;
 let shuttingDown = false;
 let smoke = null;
 
 function broadcast(event) {
   if (event.type === 'state') {
+    speechController?.checkState();
+    if (speechController) event = { ...event, state: speechController.decorate(event.state) };
     const state = event.state;
     const handle = state.selectedWindow?.handle || null;
     const react = state.config.privacy.reactToWindows;
@@ -41,7 +43,8 @@ function trusted(event, overlayAllowed = false) {
 function register(method, handler, overlayAllowed = false) {
   ipcMain.handle('companion:' + method, async (event, payload) => {
     if (!trusted(event, overlayAllowed)) throw new Error('This operation is not available to that window.');
-    return await handler(payload);
+    const result = await handler(payload);
+    return result?.config && speechController ? speechController.decorate(result) : result;
   });
 }
 function openSettings() {
@@ -53,13 +56,17 @@ function toggleOverlay() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   overlayWindow.isVisible() ? overlayWindow.hide() : overlayWindow.showInactive();
 }
+function togglePause() {
+  speechController?.cancel('Recording stopped because the companion was paused.');
+  return service.pauseAll();
+}
 function updateTray() {
   if (!tray || !service) return;
   const paused = service.config.privacy.paused;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open companion settings', click: openSettings },
     { label: 'Show / hide character', click: toggleOverlay },
-    { label: paused ? 'Resume companion' : 'Pause companion', click: () => service.pauseAll().catch(() => {}) },
+    { label: paused ? 'Resume companion' : 'Pause companion', click: () => togglePause().catch(() => {}) },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() }
   ]));
@@ -97,10 +104,19 @@ async function getAvatar() {
 }
 function registerApi() {
   const methods = ['savePreferences', 'saveConnection', 'selectConnection', 'removeConnection', 'listModels', 'sendMessage',
-    'clearChat', 'cancelReply', 'listWindows', 'selectWindow', 'saveRule', 'describeWindow', 'windowAction'];
-  for (const method of methods) register(method, payload => service[method](payload));
+    'clearChat', 'clearAllMemory', 'cancelReply', 'listWindows', 'selectWindow', 'saveRule', 'describeWindow', 'windowAction'];
+  const cancelsMicrophone = new Set(['savePreferences', 'saveConnection', 'selectConnection', 'removeConnection',
+    'clearChat', 'clearAllMemory', 'cancelReply', 'sendMessage', 'describeWindow']);
+  for (const method of methods) register(method, payload => {
+    if (cancelsMicrophone.has(method)) speechController?.cancel('Recording cancelled because another activity started.');
+    return service[method](payload);
+  });
+  register('saveSpeech', input => speechController.save(input));
+  register('beginMicrophone', () => speechController.begin(settingsWindow.webContents.id));
+  register('transcribeAudio', input => speechController.submit(input, settingsWindow.webContents.id));
+  register('cancelMicrophone', input => { speechController.cancel('Recording discarded.', input?.token); return null; });
   register('getState', () => service.getState(), true);
-  register('pauseAll', () => service.pauseAll(), true);
+  register('pauseAll', togglePause, true);
   register('getAvatar', getAvatar, true);
   register('importAvatar', importAvatar);
   register('openSettings', () => openSettings(), true);
@@ -124,18 +140,28 @@ function registerApi() {
   });
 }
 async function start() {
-  const [{ SettingsStore, SecretStore, electronSecretCodec }, { CompanionApplication }, { WindowsBridge }, providers] = await Promise.all([
-    import('./core/storage.mjs'), import('./core/application.mjs'), import('./native/windows.mjs'), import('./providers/index.mjs')
+  const [{ SettingsStore, SecretStore, electronSecretCodec }, { CompanionApplication }, { WindowsBridge }, providers,
+    { ConversationStore }, { SpeechController, allowsMicrophone }] = await Promise.all([
+    import('./core/storage.mjs'), import('./core/application.mjs'), import('./native/windows.mjs'), import('./providers/index.mjs'),
+    import('./core/memory.mjs'), import('./audio/controller.mjs')
   ]);
   const directory = app.getPath('userData');
   await fs.mkdir(directory, { recursive: true });
   service = new CompanionApplication({ settings: new SettingsStore(directory), secrets: new SecretStore(directory, electronSecretCodec(safeStorage)),
+    memory: new ConversationStore(directory, electronSecretCodec(safeStorage)),
     native: new WindowsBridge({ excludedPids: [process.pid], packaged: app.isPackaged,
       helperExecutablePath: app.isPackaged ? path.join(process.resourcesPath, 'native', 'desktop-window-helper.exe') : undefined,
       allowPowerShellFallback: !app.isPackaged }), providers, emit: broadcast });
   await service.initialize();
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  speechController = new SpeechController({ service, emit: broadcast });
+  const microphonePermission = (webContents, permission, details = {}, check = false) => allowsMicrophone({
+    permission, senderId: webContents?.id, expectedId: settingsWindow?.webContents.id,
+    frameUrl: details.requestingUrl, expectedUrl: SETTINGS_URL, isMainFrame: details.isMainFrame,
+    mediaTypes: details.mediaTypes, mediaType: details.mediaType, check,
+    recording: !!webContents && webContents.getURL() === SETTINGS_URL && speechController.canRecord(webContents.id)
+  });
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => callback(microphonePermission(webContents, permission, details)));
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, _origin, details) => microphonePermission(webContents, permission, details, true));
   // Renderers load only packaged files. All model network requests originate in the main process.
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (_details, callback) => callback({ cancel: true }));
   settingsWindow = new BrowserWindow({ width: 1100, height: 820, minWidth: 640, minHeight: 620, title: 'Desktop Anime Bot',
@@ -149,6 +175,10 @@ async function start() {
   secureWindow(settingsWindow, SETTINGS_URL); secureWindow(overlayWindow, OVERLAY_URL);
   smoke?.attach(settingsWindow, 'settings'); smoke?.attach(overlayWindow, 'character');
   settingsWindow.on('close', event => { if (!shuttingDown) { event.preventDefault(); settingsWindow.hide(); } });
+  settingsWindow.on('hide', () => speechController.cancel('Recording stopped because Settings was hidden.'));
+  settingsWindow.on('minimize', () => speechController.cancel('Recording stopped because Settings was minimized.'));
+  settingsWindow.webContents.on('render-process-gone', () => speechController.cancel());
+  settingsWindow.webContents.on('did-start-loading', () => speechController.cancel());
   overlayWindow.on('close', () => { if (!shuttingDown) app.quit(); });
   registerApi();
   tray = new Tray(nativeImage.createFromPath(path.join(ROOT, 'assets', 'icon.png')));
@@ -157,7 +187,7 @@ async function start() {
   settingsWindow.show(); overlayWindow.showInactive(); overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   for (const [shortcut, action] of [
     ['Control+Shift+Space', openSettings], ['Control+Shift+H', toggleOverlay],
-    ['Control+Shift+P', () => service.pauseAll().catch(() => {})]
+    ['Control+Shift+P', () => togglePause().catch(() => {})]
   ]) {
     if (!globalShortcut.register(shortcut, action)) broadcast({ type: 'status', text: 'A global shortcut is already used by another app. The tray menu remains available.' });
   }
@@ -182,7 +212,7 @@ async function start() {
     } finally { polling = false; }
   }, 700);
   service.publish();
-  if (smoke) await smoke.verify({ settingsWindow, overlayWindow, service, credentialCodec: electronSecretCodec(safeStorage) });
+  if (smoke) await smoke.verify({ settingsWindow, overlayWindow, service, speechController, credentialCodec: electronSecretCodec(safeStorage) });
 }
 
 app.setName('DesktopAnimeBot');
@@ -204,6 +234,6 @@ else {
 }
 app.on('before-quit', () => {
   shuttingDown = true; clearInterval(cursorTimer); clearInterval(perchTimer);
-  globalShortcut.unregisterAll(); service?.dispose(); tray?.destroy();
+  globalShortcut.unregisterAll(); speechController?.dispose(); service?.dispose(); tray?.destroy();
 });
 app.on('window-all-closed', () => app.quit());

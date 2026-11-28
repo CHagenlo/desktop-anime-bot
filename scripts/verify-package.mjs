@@ -19,14 +19,15 @@ const requireFile = file => {
   if (!appFiles.has(file)) throw new Error('The packaged application is missing ' + file);
 };
 for (const file of ['package.json', 'src/main.cjs', 'src/preload.cjs', 'src/core/application.mjs', 'src/core/storage.mjs',
-  'src/native/windows.mjs', 'src/providers/index.mjs', 'renderer/settings.html', 'renderer/settings.js',
+  'src/native/windows.mjs', 'src/providers/index.mjs', 'src/core/memory.mjs',
+  'src/audio/controller.mjs', 'src/audio/transcription.mjs', 'src/audio/wav.mjs', 'renderer/microphone.mjs', 'renderer/settings.html', 'renderer/settings.js',
   'renderer/settings.css', 'renderer/overlay.html', 'renderer/overlay.js', 'renderer/overlay.css', 'assets/icon.png',
   'node_modules/three/build/three.module.js', 'node_modules/three/build/three.core.js',
   'node_modules/three/examples/jsm/loaders/GLTFLoader.js', 'node_modules/three/examples/jsm/utils/BufferGeometryUtils.js',
   'node_modules/@pixiv/three-vrm/lib/three-vrm.module.js']) requireFile(file);
 
 for (const file of appFiles) {
-  if (/^(?:tests|scripts|\.github)\//.test(file) || /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials[^/]*\.json|settings\.json|avatar\.vrm)$/.test(file)
+  if (/^(?:tests|scripts|\.github)\//.test(file) || /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials[^/]*\.json|conversations[^/]*\.json|settings\.json|avatar\.vrm)$/.test(file)
       || /^node_modules\/(?:electron(?:-builder)?|@electron\/asar)\//.test(file) || /\.(?:ps1|cs)$/.test(file)) {
     throw new Error('A development or runtime-only file was included in the app: ' + file);
   }
@@ -39,7 +40,7 @@ const aliases = {
   three: 'node_modules/three/build/three.module.js',
   '@pixiv/three-vrm': 'node_modules/@pixiv/three-vrm/lib/three-vrm.module.js'
 };
-const pending = ['renderer/overlay.js'];
+const pending = ['renderer/overlay.js', 'renderer/settings.js'];
 const checked = new Set();
 await init();
 while (pending.length) {

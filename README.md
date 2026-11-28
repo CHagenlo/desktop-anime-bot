@@ -6,12 +6,12 @@ A Windows desktop companion prototype with a movable 3D character, configurable 
 
 ## Try it on Windows
 
-Version **0.1.1** adds Windows x64 installer and portable test builds. Downloads are published to [GitHub Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the Windows build, automated tests, package checks, and startup smoke checks succeed. If no matching test release is listed, an installer has not been published for that version yet. The [Windows build page](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) shows its progress.
+Version **0.2.0** adds microphone transcription, encrypted conversation memory, and visible local-model loading stages to the Windows x64 installer and portable builds. Downloads are published to [GitHub Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the Windows build, automated tests, package checks, and startup smoke checks succeed. If no matching test release is listed, an installer has not been published for that version yet. The [Windows build page](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) shows its progress.
 
 ### Install the app
 
 1. Open [Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) and choose the newest successful Windows test build.
-2. Under **Assets**, download **`Desktop-Anime-Bot-Setup-0.1.1-x64.exe`**. The **Source code** ZIP is for developers.
+2. Under **Assets**, download **`Desktop-Anime-Bot-Setup-0.2.0-x64.exe`**. The **Source code** ZIP is for developers.
 3. Open the downloaded installer. It installs for your Windows account and creates Start menu and desktop shortcuts.
 4. Open **Desktop Anime Bot**. Review the settings, add an AI connection, and select **Resume companion** when ready.
 
@@ -21,7 +21,7 @@ These are **unsigned test builds**. Windows may show an unknown publisher or a r
 
 ### Run without installing
 
-Download **`Desktop-Anime-Bot-Portable-0.1.1-x64.exe`** from the same release and open it. It launches without an installation wizard or shortcuts. Although the executable extracts its runtime files temporarily, your settings, encrypted keys, and imported avatar are saved in **`%APPDATA%\DesktopAnimeBot`**, just as with the installed version. The portable version shares that profile on the same Windows account; it does not keep your profile beside the executable.
+Download **`Desktop-Anime-Bot-Portable-0.2.0-x64.exe`** from the same release and open it. It launches without an installation wizard or shortcuts. Although the executable extracts its runtime files temporarily, your settings, encrypted keys, saved conversations, and imported avatar are saved in **`%APPDATA%\DesktopAnimeBot`**, just as with the installed version. The portable version shares that profile on the same Windows account; it does not keep your profile beside the executable.
 
 ### Windows requirements
 
@@ -33,15 +33,18 @@ The settings window and character open together. **Every launch starts paused**,
 
 ## What is included
 
-- An Electron settings window with **Chat**, **AI connections**, **Desktop privacy**, and **Character** tabs.
+- An Electron settings window with **Chat**, **AI connections**, **Voice & memory**, **Desktop privacy**, and **Character** tabs.
 - A transparent character overlay with an original procedural 3D test avatar, cursor look, blinking, head pats, dragging, and a simple sitting pose.
 - Import of a self-contained `.vrm` avatar, with a maximum size of 50 MiB.
 - Saved AI profiles, password-style key entry, model discovery, and manual model IDs.
+- A model activity bar with checking, loading, and generating stages for supported local runtimes.
+- Optional microphone recording that becomes an editable text draft before you send it.
+- Encrypted text-chat persistence for each AI profile, with a memory switch and clear controls.
 - Three independent desktop capability switches, protected per-app rules, Work/Play presets, and pause/resume controls.
 - Selected-window descriptions on explicit request, plus direct move, resize, minimize, restore, and single-action undo controls.
 - Optional spoken replies through an installed **local system voice**.
 
-This is a development test release. The avatar animation and mouth movement are basic. There is no microphone input, token-by-token response streaming, persistent conversational memory, autonomous tool loop, or continuous screen-watching mode. A successful automated build does not establish live AI compatibility or reliable interaction with every Windows application. See [verification status](docs/verification.md) for the checks performed and the remaining Windows testing.
+This is a development test release. The avatar animation and mouth movement are basic. There is no always-listening microphone, token-by-token response streaming, autonomous tool loop, or continuous screen-watching mode. A successful automated build does not establish live AI compatibility or reliable interaction with every Windows application. See [verification status](docs/verification.md) for the checks performed and the remaining Windows testing.
 
 ## First conversation
 
@@ -55,7 +58,7 @@ A saved profile is selected, not automatically connection-tested. A successful m
 
 Profiles are available for OpenAI, Anthropic/Claude, Google/Gemini, xAI/Grok, DeepSeek, Mistral, Ollama, LM Studio, and custom OpenAI-compatible endpoints. Compatibility depends on the actual endpoint and model. Models are not hard-coded, and a failed request never switches to a different provider automatically.
 
-Each saved connection has its own bounded conversation in memory. Switching profiles does not send one profile's history to another. **Clear chat** clears the active profile's conversation; exiting the app clears all conversational histories. Replacing a profile's model, endpoint, workspace, or key also clears its earlier authentication/model context where applicable.
+Each saved connection has its own bounded conversation. **Remember conversations** is enabled by default, so completed text chats can return after restart using protected storage on this PC. Switching profiles does not send one profile's history to another. **Clear chat** clears the active profile's current and saved conversation. Replacing a profile's provider, model, endpoint, workspace, or key clears its earlier authentication/model context. See [Conversation memory](#conversation-memory) for retention limits and deletion controls.
 
 ### Use local AI
 
@@ -68,9 +71,63 @@ In **AI connections**, enable **Keep AI on this computer**, then select an **Oll
 
 Start the local server and make a model available in that runtime before discovering models. An optional key can be supplied if the local server requires authentication. LM Studio discovery uses its native `/api/v1/models` API; inference uses its compatible chat endpoint.
 
+On a request to a verified local model, the companion checks whether the selected model is already loaded. A cold Ollama or LM Studio model is explicitly loaded before the chat request proceeds. The activity card shows **Checking model**, **Loading model** when needed, and **Generating a reply**, with an animated bar and elapsed time. These loading endpoints do not report a completion fraction, so the bar is indeterminate and does not invent a percentage. A warm model skips the loading stage.
+
+The loading step allows up to five minutes. If it times out, try loading the model in your local AI application, then retry. **Stop** cancels the companion's request and discards late results; the model server may finish loading the model after the client cancels. This does not download a missing model. The preparation follows [Ollama's preload interface](https://docs.ollama.com/faq#how-can-i-preload-a-model-into-ollama-to-get-faster-response-times) and [LM Studio's model-load interface](https://lmstudio.ai/docs/developer/rest/load).
+
 Local-only mode accepts these two runtime presets on loopback addresses and checks model metadata before sending prompts. Cloud-marked or unverified local models are rejected. The generic compatible preset is not accepted in this mode, even when its address is loopback. Hosted profiles can remain saved, but requests to them are blocked until local-only mode is turned off.
 
 **Local-only is an endpoint and model validation policy, not a firewall.** It cannot stop Ollama, LM Studio, or another program from making its own network requests, and it relies on the local runtime's metadata. Consult [Ollama's local FAQ](https://docs.ollama.com/faq) and [LM Studio's API documentation](https://lmstudio.ai/docs/developer/rest) for those runtimes' own settings.
+
+## Microphone input
+
+Microphone input starts **off**. Set it up in **Voice & memory**, separately from the connection used for chat. The saved audio destination is displayed before recording.
+
+| Transcription choice | Settings and prerequisites |
+|---|---|
+| **Whisper.cpp · local** | Run a separately installed **whisper.cpp v1.9.1 or later** server with a speech model loaded. The default endpoint is `http://127.0.0.1:8080`; the companion sends WAV audio to `/inference`. Leave the model field blank because the server chooses its loaded model. |
+| **OpenAI transcription** | The preset endpoint is `https://api.openai.com/v1` and its default model is `gpt-transcribe`. Supply your own transcription API key and a model available to that account. This sends the recorded audio to the configured hosted service. |
+| **Custom · OpenAI-compatible transcription** | Enter an endpoint implementing `/audio/transcriptions`, its model ID, and an optional key if required. Compatibility depends on that service's audio API. |
+
+For the local option, follow the [official whisper.cpp server instructions](https://github.com/ggml-org/whisper.cpp/blob/v1.9.1/examples/server/README.md), load a speech model in that server, and keep it running on `127.0.0.1:8080` or another loopback port you configure. The companion does not install, start, or download the speech server/model. Ollama and LM Studio chat profiles do not automatically provide this transcription service.
+
+Choose a transcription provider, review its endpoint, enter the model/key when needed, enable microphone input, and select **Save voice settings**. Language can be left blank for detection or set to a two-letter code such as `en`. The transcription key is stored as a separate protected credential; your chat key is not automatically reused.
+
+### Record, review, then send
+
+1. Resume the companion and open **Chat**.
+2. Select **Record message**. Only this explicit action opens the microphone.
+3. Select **Stop & transcribe** when finished. A recording also stops and proceeds to transcription at the **60-second** limit.
+4. Review the recognized text in the chat draft and edit it as needed.
+5. Select **Send** to send that text to the selected chat AI.
+
+**Discard** stops a recording without transcription. During transcription, **Cancel** discards a late result. Canceling cannot recall audio already sent to the selected speech service. Transcription never automatically sends a chat message, and the draft is not saved as conversation memory until you send it and a text reply completes.
+
+The companion keeps raw audio transiently for the recording/transcription request and does not write audio recordings to its files or conversation memory. The selected speech server's own handling of received audio still applies. With **Keep AI on this computer** enabled, microphone input accepts only the whisper.cpp preset on a loopback address; hosted and custom transcription endpoints are blocked. The local-only setting does not control another program's network access.
+
+If the microphone is denied or unavailable, check Windows microphone access for desktop apps and the default input device. Typed chat remains available. Spoken replies are configured separately under **Character → Read replies aloud**.
+
+## Conversation memory
+
+In **Voice & memory**, **Remember conversations** controls persistence of completed text chats. It is enabled by default. Saved transcripts are encrypted using Windows protection in `conversations.enc.json` inside the normal app profile, separately from API keys. They are restored only to the same AI profile and destination/model/key context.
+
+| Limit | Behavior |
+|---|---|
+| Saved text per profile | Up to **200 messages** in complete user/assistant turns, within **524,288 characters**. Older turns outside this window are removed. |
+| Saved text across profiles | Up to **2,097,152 characters** across at most 40 profiles. The least recently saved profiles are removed first when the total limit is reached. |
+| Context sent on a new text request | Up to the **20 most recent prior messages** that fit with your current prompt inside **32,768 characters**. Character/system instructions are additional. A larger saved transcript is not sent in full on every request. |
+
+This is bounded transcript memory. It does not summarize every conversation into permanent facts or search an unlimited archive. Your prior messages are sent to the same selected AI profile when they fit the context window.
+
+- **Clear chat** removes the selected profile's current and saved conversation.
+- **Clear all conversations** in Voice & memory removes current and saved chats for every AI profile. It does not remove AI connections, keys, the imported avatar, or other settings.
+- Turning **Remember conversations off** clears current and saved chats. New chats then remain in the current session only.
+- Turning it **on again** starts fresh and clears current session chats; it never backfills messages sent while saving was off.
+- Removing a profile or changing its provider, model, endpoint, workspace, or key clears its earlier conversation context.
+
+Screen captures, screenshot-description questions and answers, and raw audio are excluded from this memory. A microphone transcript becomes ordinary text chat only after you review and send it.
+
+If Windows protection is unavailable, a saved file is damaged, or a write fails, chat continues in the current session and the memory status explains the problem. There is no plaintext fallback. An unreadable saved file is preserved until explicitly cleared; **Clear all conversations** can reset it without decrypting it. A deletion failure is reported instead of being treated as a successful clear.
 
 ## Desktop access: three separate choices
 
@@ -136,7 +193,7 @@ In **Character**, set the name, personality, and playfulness, then save. Persona
 
 On the desktop, drag the character to move, click her head to pat, or right-click to open settings. The overlay controls provide settings, pause/resume, hide, and quit. Mouth movement is an approximation, not phoneme-accurate lip synchronization.
 
-**Read replies aloud** uses only an installed voice identified by the system as local. If one is unavailable, the app shows captions and reports that limitation. It does not provide a custom anime voice, cloud speech service, or microphone conversation.
+**Read replies aloud** uses only an installed voice identified by the system as local. If one is unavailable, the app shows captions and reports that limitation. It does not provide a custom anime voice or cloud speech output. Configure optional microphone transcription separately in **Voice & memory**; replies still begin only after you send the reviewed draft.
 
 | Shortcut | Action |
 |---|---|
@@ -152,10 +209,11 @@ The application explicitly stores its normal Windows profile in **`%APPDATA%\Des
 
 | File/data | Contents |
 |---|---|
-| `settings.json` | Plain JSON preferences, provider endpoints/model IDs, character settings, and executable access rules. No API keys. |
-| `credentials.enc.json` | API keys protected using Electron `safeStorage` on Windows. |
+| `settings.json` | Plain JSON preferences, chat and transcription endpoints/model IDs, memory choice, character settings, and executable access rules. No API keys or chat text. |
+| `credentials.enc.json` | Separate chat and transcription credentials protected using Electron `safeStorage` on Windows. |
+| `conversations.enc.json` | Protected text transcripts for each AI profile when memory is enabled and available. |
 | `avatar.vrm` | A local copy of the imported avatar. |
-| Conversation histories | Memory only; separate per profile and lost on app exit. |
+| Raw audio, screen images, and screenshot descriptions | Transient request data; excluded from conversation storage. The selected service receives the data explicitly sent to it. |
 
 The renderer receives only a `hasKey` flag. Keys are bound to the provider, normalized endpoint, and workspace; changing that binding requires a replacement key or removal of the previous key. The prototype refuses key storage if supported Windows protection is unavailable. Electron's [safeStorage documentation](https://www.electronjs.org/docs/latest/api/safe-storage) explains its Windows protection and its limits, including access by other applications running as the same user.
 
@@ -165,6 +223,12 @@ The renderer receives only a `hasKey` flag. Keys are bound to the provider, norm
 |---|---|
 | Chat is disabled | Resume the companion, select a profile, choose a model, and check local-only mode. |
 | Discovery fails | Save endpoint/key changes first, confirm server availability and credentials, or enter a supported model ID manually. |
+| A local model stays on Loading | Check the model server, available memory, and selected model. The load step times out after five minutes; loading it directly in Ollama/LM Studio may help diagnose the cause. The bar does not estimate a completion percentage. |
+| Record message is unavailable | Resume, enable microphone input in Voice & memory, save the speech endpoint/model/key, and check local-only mode. Finish or cancel the current AI request first. |
+| The microphone is denied or missing | Check Windows microphone access for desktop apps and the default recording device. |
+| Transcription cannot connect | Start the separately installed whisper.cpp server with a model loaded, or check the hosted/custom speech endpoint, model, and separate API key. |
+| A conversation is missing after restart | Check Remember conversations and its status. Changed profile/model/key bindings, the retention limits, or a reported storage failure can prevent restoration. |
+| Saved memory cannot be read or cleared | Review the memory status and access to the app data folder. Clear all conversations can remove an unreadable encrypted file; a failed deletion is reported. |
 | No installer is listed | Check the Windows workflow for the desired version. Downloads are published only after all release gates pass. |
 | Windows reports an unknown publisher | This test release is unsigned. Keep Windows and organization protections enabled, and include the exact release version when reporting a block. |
 | Native windows are unavailable in an installed build | Check the error message, the Windows/.NET Framework requirements, and whether security software blocked the included helper. A distributed build uses its compiled helper and does not fall back to a PowerShell script. |
@@ -188,13 +252,13 @@ npm.cmd run check
 npm.cmd test
 npm.cmd run package:win
 npm.cmd run smoke:windows
-node scripts/smoke-windows.cjs "dist/Desktop-Anime-Bot-Portable-0.1.1-x64.exe" portable
+node scripts/smoke-windows.cjs "dist/Desktop-Anime-Bot-Portable-0.2.0-x64.exe" portable
 ```
 
 `package:win` compiles the native helper, builds both executables, checks the packaged renderer dependency graph and helper, and writes checksums. The resulting downloads are in `dist/`:
 
-- `Desktop-Anime-Bot-Setup-0.1.1-x64.exe`
-- `Desktop-Anime-Bot-Portable-0.1.1-x64.exe`
+- `Desktop-Anime-Bot-Setup-0.2.0-x64.exe`
+- `Desktop-Anime-Bot-Portable-0.2.0-x64.exe`
 - `SHA256SUMS.txt`
 - `package-verification.json`
 
@@ -202,19 +266,22 @@ For an unpacked application directory, use `npm.cmd run package:win:dir`. To run
 
 ### GitHub builds and test releases
 
-[`.github/workflows/windows-build.yml`](.github/workflows/windows-build.yml) runs on pushes to `main` and supports a manual **Run workflow**. Its Windows job installs the locked dependencies, runs source checks and tests, compiles/packages the app, verifies packaged files, and runs startup smoke checks of both the unpacked app and portable executable with disposable profiles. These checks must pass before the downloads are uploaded. Smoke reports and window images are available as workflow artifacts when produced.
+[`.github/workflows/windows-build.yml`](.github/workflows/windows-build.yml) runs on pushes to `main` and supports a manual **Run workflow**. Its Windows job installs the locked dependencies, runs source checks/tests, then builds and verifies the unpacked app. After that app passes startup and feature smoke checks, the workflow creates the installer and portable executable from the same directory, verifies the downloads, and smoke-tests the portable executable. These checks must pass before the downloads are uploaded. Smoke reports and window images are available as workflow artifacts when produced.
 
-A separate publish job creates a **prerelease** for a successful build of `main`, using a unique tag such as `v0.1.1-test.RUN.ATTEMPT`. Releases include both executables, their SHA-256 checksums, package verification details, and the source commit link. A failed build does not publish a new download. The app does not update itself automatically; install or open a newer test build explicitly.
+The feature smoke checks use disposable profiles, synthetic Chromium audio, and local HTTP fixtures for speech and model responses. They exercise the packaged microphone-to-draft flow, visible loading state, and Windows-protected conversation restore/clear. They do not establish physical microphone quality, live transcription accuracy, or real model-loading performance. Normal app launches use your chosen microphone only after you start recording.
+
+A separate publish job creates a **prerelease** for a successful build of `main`, using a unique tag such as `v0.2.0-test.RUN.ATTEMPT`. Releases include both executables, their SHA-256 checksums, package verification details, and the source commit link. A failed build does not publish a new download. The app does not update itself automatically; install or open a newer test build explicitly.
 
 ## How it is put together
 
 | Area | Responsibility |
 |---|---|
-| `renderer/` | Local settings UI, text-only response display, and Three.js/VRM overlay. |
+| `renderer/` | Local settings UI, microphone recording/draft insertion, text-only response display, and Three.js/VRM overlay. |
 | `src/preload.cjs` | Narrow `window.companion` bridge. |
 | `src/main.cjs` | Electron windows, IPC sender validation, tray, shortcuts, avatar import, cursor/perch placement. |
-| `src/core/` | Configuration, operation cancellation, permissions, credentials, conversations, and target checks. |
-| `src/providers/` | Provider-specific discovery and generation protocols; all AI network calls. |
+| `src/core/` | Configuration, operation cancellation, permissions, credentials, encrypted text memory, and target checks. |
+| `src/providers/` | Chat provider discovery, local-model loading, and generation protocols. |
+| `src/audio/` | Microphone grants, bounded WAV validation, separate transcription credentials, and speech-service requests. |
 | `src/native/` | Compiled Windows helper source, fixed protocol, window operations, and isolated capture; PowerShell loader for source development only. |
 | `tests/` | Offline tests with mocked provider and native transports. |
 | `scripts/` | Native compilation, package verification, source checks, and Windows startup smoke checks. |

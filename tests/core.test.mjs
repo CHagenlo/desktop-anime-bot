@@ -25,7 +25,7 @@ function allowedConfig() {
   return config;
 }
 async function fixture(overrides = {}) {
-  const calls = { requests: [], captures: 0, actions: 0, cancels: 0, saves: 0 };
+  const calls = { requests: [], captures: 0, actions: 0, cancels: 0, saves: 0, events: [] };
   const providers = {
     PROVIDER_PRESETS: [{ id: 'ollama', label: 'Ollama', baseUrl: connection.baseUrl }, { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.example.test/v1' }],
     validateConnection(c, options = {}) {
@@ -45,7 +45,8 @@ async function fixture(overrides = {}) {
   };
   const secrets = { async load() {}, has() { return false; }, async get() { return ''; }, async put() {}, async remove() {}, ...overrides.secrets };
   const settings = { async load() { return allowedConfig(); }, async save() { calls.saves += 1; }, ...overrides.settings };
-  const app = new CompanionApplication({ settings, secrets, native, providers, platform: 'win32', ownPid: 1 });
+  const app = new CompanionApplication({ settings, secrets, memory: overrides.memory, native, providers, platform: 'win32', ownPid: 1,
+    emit(event) { calls.events.push(clone(event)); overrides.emit?.(event); } });
   await app.initialize();
   await app.savePreferences({ privacy: { paused: false } });
   app.selectedWindow = clone(target);
@@ -114,12 +115,61 @@ test('Windows credential codec refuses unavailable protection and other platform
   await assert.rejects(electronSecretCodec({ isAsyncEncryptionAvailable: async () => false }, 'win32').encrypt('key'));
   await assert.rejects(electronSecretCodec({}, 'linux').encrypt('key'));
 });
-test('application starts paused and never persists conversational messages', async () => {
+test('application starts paused and keeps conversation text out of settings', async () => {
   const { app } = await fixture();
   const another = await fixture({ settings: { async save(config) { assert(!Object.hasOwn(config, 'messages')); } } });
   await another.app.sendMessage({ text: 'Hello' });
   await another.app.savePreferences({ character: { name: 'Nova' } });
   await app.initialize(); assert.equal(app.config.privacy.paused, true);
+});
+test('reply progress is forwarded only while its request is active and is reset after success', async () => {
+  let callbacks;
+  const { app, calls } = await fixture({ providers: { async generateReply(_connection, options) {
+    callbacks = options;
+    options.onProgress({ phase: 'checking', text: 'Checking the selected model.', progress: null });
+    options.onProgress({ phase: 'generating', text: 'Waiting for its reply.', progress: null });
+    assert.equal(app.getState().status.replyProgress.phase, 'generating');
+    return 'Complete response';
+  } } });
+  await app.sendMessage({ text: 'Hello' });
+  const progress = calls.events.filter(event => event.type === 'reply-progress');
+  assert.deepEqual(progress.map(event => [event.active, event.phase, event.progress]), [[true, 'checking', null], [true, 'generating', null], [false, 'idle', null]]);
+  assert.equal(new Set(progress.map(event => event.requestId)).size, 1);
+  assert.equal(app.getState().status.replyProgress, null);
+  const count = calls.events.length;
+  callbacks.onProgress({ phase: 'loading', text: 'Late callback', progress: 0.5 });
+  callbacks.onDelta('Late content');
+  assert.equal(calls.events.length, count);
+});
+test('cancelled replies cannot send late progress or content and always clear progress', async () => {
+  const entered = deferred(), released = deferred();
+  let callbacks;
+  const { app, calls } = await fixture({ providers: { async generateReply(_connection, options) {
+    callbacks = options;
+    options.onProgress({ phase: 'loading', text: 'Loading the selected model.', progress: null });
+    entered.resolve(); return released.promise;
+  } } });
+  const request = app.sendMessage({ text: 'Hello' });
+  const rejected = assert.rejects(request, /cancel/i);
+  await entered.promise; app.cancelReply();
+  assert.equal(app.getState().status.replyProgress, null);
+  const count = calls.events.length;
+  callbacks.onProgress({ phase: 'generating', text: 'Late callback', progress: null });
+  callbacks.onDelta('Late content');
+  assert.equal(calls.events.length, count);
+  released.resolve('Late reply'); await rejected;
+  assert.equal(calls.events.filter(event => event.type === 'chat-reply').length, 0);
+  assert.equal(calls.events.filter(event => event.type === 'reply-progress').at(-1).active, false);
+  assert.deepEqual(app.getState().messages, []);
+});
+test('failed providers reset reply progress and release the busy state', async () => {
+  const { app, calls } = await fixture({ providers: { async generateReply(_connection, options) {
+    options.onProgress({ phase: 'checking', text: 'Checking the selected model.', progress: null });
+    throw new Error('A controlled provider failure.');
+  } } });
+  await assert.rejects(app.sendMessage({ text: 'Hello' }), /controlled provider failure/);
+  assert.equal(app.busy, false);
+  assert.equal(calls.events.filter(event => event.type === 'reply-progress').at(-1).active, false);
 });
 test('switching provider connections keeps their histories separate', async () => {
   const { app, calls } = await fixture();

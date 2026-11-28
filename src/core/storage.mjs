@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { sanitizeConfig } from './config.mjs';
 
 async function readJson(file, fallback) {
@@ -34,6 +35,9 @@ export class SecretStore {
     const entry = this.entries[connection.id];
     return !!entry && entry.binding === secretBinding(connection) && typeof entry.encrypted === 'string';
   }
+  fingerprint(connection) {
+    return this.has(connection) ? createHash('sha256').update(this.entries[connection.id].encrypted).digest('hex') : '';
+  }
   async put(connection, key) {
     if (typeof key !== 'string' || !key.trim() || key.length > 8192 || /[\r\n\u0000]/.test(key)) throw new Error('Enter a valid API key.');
     const encrypted = await this.codec.encrypt(key.trim());
@@ -60,6 +64,7 @@ export function electronSecretCodec(safeStorage, platform = process.platform) {
     if (!available) throw new Error('Windows key protection is unavailable. The key was not saved.');
   }
   return {
+    async isAvailable() { try { await ready(); return true; } catch { return false; } },
     async encrypt(key) {
       await ready();
       return typeof safeStorage.encryptStringAsync === 'function' ? await safeStorage.encryptStringAsync(key) : safeStorage.encryptString(key);

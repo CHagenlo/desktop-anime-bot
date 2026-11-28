@@ -18,6 +18,8 @@ function prepareSmoke(app) {
     throw new Error('Smoke reports must use a dedicated directory under the system temporary folder.');
   }
   const profile = path.join(directory, 'profile');
+  // Only diagnostic launches use Chromium's synthetic microphone. Normal launches do not.
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
   fs.mkdirSync(profile, { recursive: true });
   app.setPath('userData', profile);
   const rendererErrors = [];
@@ -90,11 +92,13 @@ function prepareSmoke(app) {
           if (capture.isEmpty()) throw new Error(name + ' did not produce a rendered image.');
           await fsp.writeFile(path.join(directory, name + '.png'), capture.toPNG());
         }
+        const { verifyFeatures } = require('./smoke-features.cjs');
+        const features = await verifyFeatures({ app, settingsWindow, service, credentialCodec, poll, directory });
         if (rendererErrors.length) throw new Error(rendererErrors.join('\n'));
         await finish({ ok: true, checks: { settingsPreload: settings.bridge, settingsInitialized: settings.initialized,
           providerChoices: settings.providers, overlayPreload: overlay.bridge, avatarFrameRendered: overlay.rendered,
           startsPaused: true, nativeHelperEnumeration: true, nativeWindowCount: nativeWindows.length,
-          windowsCredentialEncryption: true, windowImagesWritten: true } });
+          windowsCredentialEncryption: true, windowImagesWritten: true, ...features } });
       } catch (error) { await finish({ ok: false, error: error.message || String(error) }); }
     },
     fail: error => finish({ ok: false, error: error.message || String(error) })

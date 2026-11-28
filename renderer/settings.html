@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>Companion · Desktop studio</title>
   <link rel="stylesheet" href="settings.css">
-  <script defer src="settings.js"></script>
+  <script type="module" src="settings.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -16,6 +16,7 @@
       <nav class="navigation" aria-label="Settings sections">
         <button type="button" class="nav-item active" data-tab="chat" aria-current="page"><span aria-hidden="true">◌</span>Chat</button>
         <button type="button" class="nav-item" data-tab="connections"><span aria-hidden="true">⌘</span>AI connections</button>
+        <button type="button" class="nav-item" data-tab="voice"><span aria-hidden="true">♫</span>Voice &amp; memory</button>
         <button type="button" class="nav-item" data-tab="privacy"><span aria-hidden="true">◇</span>Desktop privacy</button>
         <button type="button" class="nav-item" data-tab="character"><span aria-hidden="true">✧</span>Character</button>
       </nav>
@@ -29,16 +30,52 @@
     <main class="main">
       <header class="page-header"><div><p class="eyebrow">A LITTLE COMPANY. ON YOUR TERMS.</p><h1 id="page-title">Let's talk.</h1><p id="page-subtitle">Your character, your choice of AI, your desktop.</p></div><span class="prototype-badge">DEVELOPMENT BUILD</span></header>
       <div id="app-status" class="notice" role="status" aria-live="polite" hidden></div>
+      <section id="model-activity" class="model-activity" aria-label="AI request activity" hidden>
+        <div class="activity-heading"><div role="status" aria-live="polite"><strong id="model-activity-label">Preparing a reply</strong><p id="model-activity-text"></p></div><button id="model-activity-stop" type="button" class="button secondary small">Stop</button></div>
+        <progress id="model-activity-progress" max="1" aria-label="Model activity"></progress>
+        <div class="activity-details"><span id="model-activity-percent" hidden></span><span id="model-activity-elapsed">0:00 elapsed</span></div>
+      </section>
+      <div id="microphone-session" class="microphone-session" data-phase="idle" hidden>
+        <span class="recording-dot" aria-hidden="true"></span><div class="microphone-session-copy"><strong id="microphone-status" role="status" aria-live="polite">Microphone idle</strong><span id="microphone-timer" aria-label="Recording duration">0:00</span></div><button id="microphone-open-chat" type="button" class="text-button" data-go="chat" hidden>Open Chat</button><button id="microphone-cancel" type="button" class="button secondary small">Discard</button>
+      </div>
 
       <section id="panel-chat" class="tab-panel" aria-labelledby="page-title">
         <div class="chat-route"><div><span class="status-dot"></span><strong id="chat-profile">No AI selected</strong><span id="chat-model">Add a connection to begin</span></div><button type="button" class="text-button" data-go="connections">Change connection ↗</button></div>
         <div class="chat-panel">
           <div class="chat-panel-top"><span>CONVERSATION</span><button id="clear-chat" type="button" class="text-button">Clear chat</button></div>
           <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
-          <div id="chat-empty" class="chat-empty"><div class="welcome-orb" aria-hidden="true"><i></i></div><h2>A familiar face.<br>A fresh conversation.</h2><p>Pick an AI connection, then say hello.<br>Your chat stays in memory until you clear it or close the app.</p><div class="prompt-chips"><button type="button" data-prompt="Hi! Let's get to know each other.">Say hello</button><button type="button" data-prompt="Help me think through what I want to do today.">Plan my day</button></div></div>
-          <form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-input">Message your companion</label><textarea id="chat-input" rows="2" maxlength="12000" placeholder="Tell me what's on your mind…"></textarea><div class="composer-bottom"><span id="chat-send-note">Text goes only to your selected connection.</span><div><button id="cancel-reply" type="button" class="button secondary small" hidden>Stop</button><button id="send-message" type="submit" class="button primary small">Send <span aria-hidden="true">↗</span></button></div></div></form>
+          <div id="chat-empty" class="chat-empty"><div class="welcome-orb" aria-hidden="true"><i></i></div><h2>A familiar face.<br>A fresh conversation.</h2><p>Pick an AI connection, then say hello.<br><span id="chat-memory-hint">Each AI profile keeps its own conversation.</span></p><div class="prompt-chips"><button type="button" data-prompt="Hi! Let's get to know each other.">Say hello</button><button type="button" data-prompt="Help me think through what I want to do today.">Plan my day</button></div></div>
+          <form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-input">Message your companion</label><textarea id="chat-input" rows="2" maxlength="12000" placeholder="Tell me what's on your mind…"></textarea><div class="voice-composer"><button id="microphone-toggle" type="button" class="button secondary small" aria-describedby="microphone-destination microphone-hint" disabled>Record message</button><div class="voice-composer-copy"><span id="microphone-destination">Microphone input is off.</span><small id="microphone-hint">Set up voice input before recording.</small></div><button type="button" class="text-button voice-setup" data-go="voice">Set up</button></div><div class="composer-bottom"><span id="chat-send-note">Text goes only to your selected connection.</span><div><button id="cancel-reply" type="button" class="button secondary small" hidden>Stop</button><button id="send-message" type="submit" class="button primary small">Send <span aria-hidden="true">↗</span></button></div></div></form>
         </div>
-        <p class="footnote">Changing AI connections starts a separate conversation. There is no automatic provider fallback.</p>
+        <p class="footnote">Each AI profile has its own conversation. Recent messages accompany your next request to that profile. There is no automatic provider fallback.</p>
+      </section>
+
+      <section id="panel-voice" class="tab-panel" hidden aria-labelledby="page-title">
+        <div class="voice-layout">
+          <section class="card speech-card">
+            <div class="section-heading"><div><p class="eyebrow">SPEAK, THEN REVIEW</p><h2>Microphone input</h2></div><span id="speech-state" class="tag">OFF</span></div>
+            <label class="setting-row speech-enabled-row"><span class="setting-copy"><strong>Enable microphone input</strong><span>Recording begins only when you press Record in Chat. Transcripts go into your editable draft.</span></span><input id="speech-enabled" class="switch" type="checkbox" role="switch"></label>
+            <form id="speech-form" autocomplete="off">
+              <label class="field"><span>Transcription provider</span><select id="speech-provider" required></select><small>Audio uses this connection separately from your chat AI.</small></label>
+              <label class="field"><span>Audio API endpoint</span><input id="speech-url" type="url" spellcheck="false" required><small id="speech-endpoint-hint">Save your transcription connection before recording.</small></label>
+              <div class="field-grid"><label class="field"><span>Transcription model</span><input id="speech-model" maxlength="512" spellcheck="false" placeholder="Model ID"><small id="speech-model-hint">Use a model supported by this transcription endpoint.</small></label><label class="field"><span>Language <span class="inline-label">optional</span></span><input id="speech-language" maxlength="20" spellcheck="false" placeholder="Automatic"><small>Leave blank for automatic detection, or enter a language code such as en.</small></label></div>
+              <label class="field"><span>API key <span id="speech-key-state" class="inline-label"></span></span><input id="speech-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="If your transcription server requires one"><small id="speech-key-hint">The transcription key is stored separately from your chat key.</small></label>
+              <label id="speech-remove-key-row" class="check-row" hidden><input id="speech-remove-key" type="checkbox">Remove the saved transcription key</label>
+              <div class="destination-box"><span>SAVED AUDIO DESTINATION</span><strong id="speech-destination">Microphone input is off</strong><small id="speech-destination-url">No audio is sent until you record and stop.</small></div>
+              <p id="speech-privacy-note" class="field-help">Save your settings, enable microphone input, then record a short message in Chat.</p>
+              <div class="form-actions"><button id="save-speech" type="submit" class="button primary">Save voice settings</button></div>
+            </form>
+          </section>
+          <div class="voice-side">
+            <section class="card memory-card"><div class="section-heading"><div><p class="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2>Conversation memory</h2></div></div>
+              <label class="setting-row memory-enabled-row"><span class="setting-copy"><strong>Remember conversations</strong><span>Save each AI profile’s chat on this PC so it is available after restarting the app.</span></span><input id="memory-enabled" class="switch" type="checkbox" role="switch"></label>
+              <div id="memory-status" class="notice subtle" role="status" aria-live="polite">Checking conversation memory…</div>
+              <p class="muted small-copy">Saved chats use Windows protection. Recent messages are included in requests to the same AI profile. Turning memory off erases saved and current conversations.</p>
+              <button id="clear-all-memory" type="button" class="button secondary full danger-button">Clear all conversations</button><p class="footnote">This clears every AI profile’s saved and current chat. Use Clear chat in Chat to clear only the selected profile.</p>
+            </section>
+            <section class="card voice-guide"><p class="eyebrow">YOU CHOOSE WHEN TO SEND</p><h2>A voice note becomes a draft.</h2><ol><li>Press <strong>Record message</strong> in Chat.</li><li>Press <strong>Stop &amp; transcribe</strong> when you finish.</li><li>Review the text, edit it, then press <strong>Send</strong>.</li></ol><p class="footnote">Discard ends the recording without transcription. Read-aloud replies are configured in Character.</p><button type="button" class="text-button" data-go="chat">Go to Chat ↗</button></section>
+          </div>
+        </div>
       </section>
 
       <section id="panel-connections" class="tab-panel" hidden aria-labelledby="page-title">
@@ -83,7 +120,7 @@
 
       <section id="panel-character" class="tab-panel" hidden aria-labelledby="page-title">
         <div class="character-layout"><section class="card avatar-card"><div class="avatar-illustration" aria-hidden="true"><div class="avatar-orbit"></div><div class="avatar-face"><i></i><i></i></div><span>✦</span></div><span id="avatar-badge" class="tag">PROTOTYPE AVATAR</span><h2 id="avatar-name">Your character starts here.</h2><p id="avatar-description" class="muted">A simple procedural 3D stand-in is included. Import your own VRM to give your companion a look.</p><button id="import-avatar" type="button" class="button primary full">Import a VRM avatar</button><button id="preview-avatar" type="button" class="button quiet full">Show / hide on desktop</button><p class="footnote">Choose a self-contained .vrm model you own or have permission to use. External model assets are not loaded.</p></section>
-          <section class="card"><div class="section-heading"><div><p class="eyebrow">MAKE HER YOURS</p><h2>A little personality.</h2></div></div><form id="character-form"><label class="field"><span>Name</span><input id="character-name" maxlength="60" required></label><label class="field"><span>Personality</span><textarea id="character-personality" rows="6" maxlength="6000" placeholder="Warm, curious, gently playful…"></textarea><small>Describe how your companion should speak and behave in conversation.</small></label><label class="field"><span>Playfulness</span><select id="character-playfulness"><option value="quiet">Calm · subtle movements</option><option value="balanced">Balanced · a little character</option><option value="playful">Playful · more expressive</option></select><small>Changes animation intensity. It never grants desktop permissions.</small></label><label class="check-row"><input id="character-speech" type="checkbox"><span>Read replies aloud <small>Uses an installed local system voice when available. Microphone input is not included in this prototype.</small></span></label><div class="form-actions"><button type="submit" class="button primary">Save character</button></div></form></section>
+          <section class="card"><div class="section-heading"><div><p class="eyebrow">MAKE HER YOURS</p><h2>A little personality.</h2></div></div><form id="character-form"><label class="field"><span>Name</span><input id="character-name" maxlength="60" required></label><label class="field"><span>Personality</span><textarea id="character-personality" rows="6" maxlength="6000" placeholder="Warm, curious, gently playful…"></textarea><small>Describe how your companion should speak and behave in conversation.</small></label><label class="field"><span>Playfulness</span><select id="character-playfulness"><option value="quiet">Calm · subtle movements</option><option value="balanced">Balanced · a little character</option><option value="playful">Playful · more expressive</option></select><small>Changes animation intensity. It never grants desktop permissions.</small></label><label class="check-row"><input id="character-speech" type="checkbox"><span>Read replies aloud <small>Uses an installed local system voice when available. Configure microphone input separately in Voice &amp; memory.</small></span></label><div class="form-actions"><button type="submit" class="button primary">Save character</button></div></form></section>
         </div><div class="hint-strip"><span aria-hidden="true">✧</span><p>On the desktop, drag your character to move her, click her head to pat, or right-click to open settings.</p></div>
       </section>
     </main>

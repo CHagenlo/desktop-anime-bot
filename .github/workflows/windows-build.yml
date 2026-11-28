@@ -38,16 +38,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm.cmd test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and verify the unpacked Windows app
+        run: npm.cmd run package:win:dir
+      - name: Smoke-test the packaged Windows app
+        run: npm.cmd run smoke:windows
       - name: Build installer and portable executable
         id: package
         run: |
-          npm.cmd run package:win
+          npx.cmd electron-builder --config electron-builder.config.cjs --win --x64 --prepackaged dist/win-unpacked --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm.cmd run verify:package
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = node -p "require('./package.json').version"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "version=$version" >> $env:GITHUB_OUTPUT
-      - name: Smoke-test the packaged Windows app
-        run: npm.cmd run smoke:windows
       - name: Smoke-test the portable executable
         run: |
           $version = node -p "require('./package.json').version"
@@ -104,6 +108,10 @@ jobs:
           Download **Desktop-Anime-Bot-Setup-…-x64.exe** for a per-user installation with Start menu and desktop shortcuts. Download **Desktop-Anime-Bot-Portable-…-x64.exe** to launch without installing.
 
           Both packages include Electron, the default 3D character, and the compiled Windows window helper. Users do not need Node.js, npm, or PowerShell setup. AI API keys or a separately configured local model server are still needed for conversation.
+
+          Version 0.2.0 adds microphone recordings that become editable chat drafts, encrypted conversation memory across restarts, and local-model loading stages with an animated progress bar. Open **Voice & memory** to configure a local Whisper.cpp server or speech API. Speech models and server software are configured separately. Microphone input starts disabled, recordings are limited to 60 seconds, and transcripts are never sent automatically.
+
+          Conversation memory starts enabled and is kept separately for each AI profile. Use **Clear chat**, **Clear all memory**, or the memory switch to erase saved conversations. Local-model load progress is indeterminate when the server supplies no percentage.
 
           These test executables are **unsigned**. Windows may identify the publisher as unknown. No signing certificate or automatic updater is included.
 

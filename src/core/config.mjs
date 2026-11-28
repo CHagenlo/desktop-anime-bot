@@ -1,10 +1,13 @@
 import path from 'node:path';
+import { validateSpeechConnection } from '../audio/transcription.mjs';
 
 export const CAPABILITIES = ['reactToWindows', 'seeWindowContents', 'manageWindows'];
 export const DEFAULT_CONFIG = Object.freeze({
-  version: 1,
+  version: 2,
   activeConnectionId: '',
   connections: [],
+  memory: { enabled: true },
+  speech: { enabled: false, provider: 'whispercpp', baseUrl: 'http://127.0.0.1:8080', model: '', language: '' },
   privacy: { localOnly: false, reactToWindows: true, seeWindowContents: false,
     manageWindows: false, paused: false, mode: 'custom', rules: [] },
   character: { name: 'Companion', personality: 'You are a warm, curious, gently playful desktop companion. Be concise. Be honest about what you can see and do.',
@@ -39,6 +42,12 @@ export function sanitizeConfig(input = {}) {
   const config = structuredClone(DEFAULT_CONFIG);
   if (!plain(input)) return config;
   const privacy = plain(input.privacy) ? input.privacy : {};
+  if (plain(input.memory) && typeof input.memory.enabled === 'boolean') config.memory.enabled = input.memory.enabled;
+  const speech = plain(input.speech) ? input.speech : {};
+  if (['whispercpp', 'openai', 'compatible'].includes(speech.provider)) {
+    try { config.speech = validateSpeechConnection(speech); }
+    catch { /* Invalid saved speech settings never enable recording or an altered destination. */ }
+  }
   for (const key of ['localOnly', 'paused', ...CAPABILITIES]) {
     if (typeof privacy[key] === 'boolean') config.privacy[key] = privacy[key];
   }
@@ -82,6 +91,10 @@ export function sanitizeConfig(input = {}) {
 export function applyPreferences(current, patch) {
   if (!plain(patch)) throw new Error('Invalid settings update.');
   const next = sanitizeConfig(current);
+  if (plain(patch.memory) && Object.hasOwn(patch.memory, 'enabled')) {
+    if (typeof patch.memory.enabled !== 'boolean') throw new Error('The memory switch must be true or false.');
+    next.memory.enabled = patch.memory.enabled;
+  }
   const p = plain(patch.privacy) ? patch.privacy : {};
   for (const key of ['localOnly', 'paused', ...CAPABILITIES]) {
     if (Object.hasOwn(p, key) && typeof p[key] !== 'boolean') throw new Error('Settings switches must be true or false.');

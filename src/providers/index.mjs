@@ -15,6 +15,7 @@ const PRESETS = new Map(PROVIDER_PRESETS.map(p => [p.id, p]));
 const DEFAULT_ANTHROPIC_VERSION = '2026-10-21';
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_IMAGE_BASE64 = 16 * 1024 * 1024;
+const MODEL_LOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 export class ProviderError extends Error {
@@ -38,6 +39,17 @@ function plainString(value, limit, code = 'INVALID_CONFIGURATION') {
 }
 function checkAbort(signal) {
   if (signal?.aborted) fail('ABORTED', 'Request cancelled.');
+}
+
+// These load endpoints report completion, not a fractional percentage. Keep the
+// public progress contract nullable; never infer a percentage from elapsed time.
+function reportProgress(options, phase, text) {
+  if (options.signal?.aborted || typeof options.onProgress !== 'function') return;
+  try {
+    const pending = options.onProgress({ phase, text, progress: null });
+    // A status display must not turn a successful inference into a failed one.
+    if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+  } catch { /* Progress is advisory; cancellation is checked before each request. */ }
 }
 
 /** Validate a public configuration; never carry unrecognized fields or secrets through. */
@@ -227,14 +239,59 @@ async function ollamaShow(connection, id, options) {
 }
 async function selectedOllama(connection, options) {
   const tags = await ollamaTags(connection, options);
-  const tag = tags.find(item => item.model === connection.model || item.name === connection.model);
+  // Ollama resolves an untagged model name to :latest. Preserve that documented
+  // shorthand without accepting a different explicit tag or an arbitrary alias.
+  const basename = connection.model.slice(connection.model.lastIndexOf('/') + 1);
+  const canonical = basename && !basename.includes(':') ? connection.model + ':latest' : connection.model;
+  const tag = tags.find(item => item.model === connection.model || item.name === connection.model) ||
+    tags.find(item => item.model === canonical || item.name === canonical);
   if (!tag) fail('MODEL_NOT_INSTALLED', 'The selected model was not found in Ollama’s installed model list.');
   if (options.localOnly && ollamaRemote(tag)) fail('REMOTE_MODEL', 'Local-only mode blocks cloud-backed Ollama models.');
-  const info = await ollamaShow(connection, connection.model, options);
+  const model = modelId(tag.model) || modelId(tag.name);
+  if (!model) fail('INVALID_RESPONSE', 'Ollama returned an unreadable installed model identifier.');
+  const info = await ollamaShow(connection, model, options);
   if (options.localOnly && !ollamaLocalProof(tag, info)) {
     fail('LOCAL_MODEL_UNVERIFIED', 'Ollama could not verify that the selected model is installed locally.');
   }
-  return { tag, info };
+  return { tag, info, model };
+}
+
+async function loadLocalModel(connection, path, options, body) {
+  try {
+    return await requestJson(connection, path, options, {
+      method: 'POST', body, timeoutMs: MODEL_LOAD_TIMEOUT_MS,
+    });
+  } catch (error) {
+    if (error.code === 'TIMEOUT') {
+      fail('MODEL_LOAD_TIMEOUT', 'The local model did not finish loading within five minutes. Try loading it in your local AI app before retrying.');
+    }
+    throw error;
+  }
+}
+
+async function prepareOllamaModel(connection, selected, options) {
+  // Explicitly selected cloud-backed or unverified entries retain the existing
+  // chat route outside local-only mode; never send them a local warm-up request.
+  if (!ollamaLocalProof(selected.tag, selected.info)) return false;
+  const data = await requestJson(connection, 'api/ps', options);
+  const running = requireArray(data, 'models').some(item => isObject(item) && !ollamaRemote(item) &&
+    (item.model === selected.model || item.name === selected.model || item.model === connection.model ||
+      item.name === connection.model || item.digest === selected.tag.digest) &&
+    (!item.digest || item.digest === selected.tag.digest));
+  if (running) return true;
+  reportProgress(options, 'loading', 'Loading the Ollama model into memory…');
+  // An empty prompt loads an installed model without generating a dummy answer.
+  // Omit options/keep_alive so the server's context and retention settings stay in control.
+  // https://docs.ollama.com/faq#how-can-i-preload-a-model-into-ollama-to-get-faster-response-times
+  const loaded = await loadLocalModel(connection, 'api/generate', options, {
+    model: selected.model, prompt: '', stream: false,
+  });
+  if (loaded.done !== true || (loaded.done_reason !== undefined && loaded.done_reason !== 'load') ||
+      typeof loaded.response !== 'string' || loaded.response !== '' ||
+      (loaded.model !== connection.model && loaded.model !== selected.tag.model && loaded.model !== selected.tag.name)) {
+    fail('INVALID_RESPONSE', 'Ollama did not confirm that the selected model finished loading.');
+  }
+  return true;
 }
 
 async function lmStudioModels(connection, options) {
@@ -245,6 +302,32 @@ function lmStudioLocalProof(item) {
   return !remoteMetadata(item) && item.type === 'llm' &&
     ((Number.isFinite(item.size_bytes) && item.size_bytes > 0) ||
       (Array.isArray(item.loaded_instances) && item.loaded_instances.some(instance => isObject(instance) && modelId(instance.id))));
+}
+
+async function prepareLmStudioModel(connection, selected, options) {
+  if (!lmStudioLocalProof(selected)) return { model: connection.model, ready: false };
+  if (!Array.isArray(selected.loaded_instances)) {
+    fail('INVALID_RESPONSE', 'LM Studio did not report whether the selected model is loaded.');
+  }
+  const instances = selected.loaded_instances.filter(instance => isObject(instance) && modelId(instance.id));
+  const running = instances.find(instance => instance.id === connection.model) || instances[0];
+  // Use the existing instance itself, preserving its selected context/GPU/load configuration.
+  if (running) return { model: running.id, ready: true };
+  if (selected.loaded_instances.length) {
+    fail('INVALID_RESPONSE', 'LM Studio returned an unreadable loaded model instance.');
+  }
+  reportProgress(options, 'loading', 'Loading the LM Studio model into memory…');
+  // The native /chat endpoint has loading percentages but cannot accept assistant
+  // history. Its dedicated load endpoint lets us preserve stateless, role-based
+  // chat and local history without sending conversation text in a warm-up request.
+  // https://lmstudio.ai/docs/developer/rest/load
+  const loaded = await loadLocalModel(lmStudioRoot(connection), 'api/v1/models/load', options, {
+    model: selected.key,
+  });
+  if (loaded.type !== 'llm' || loaded.status !== 'loaded' || !modelId(loaded.instance_id)) {
+    fail('INVALID_RESPONSE', 'LM Studio did not confirm that the selected model finished loading.');
+  }
+  return { model: loaded.instance_id, ready: true };
 }
 
 export async function listModels(connection, { apiKey = '', signal, localOnly = false, fetchImpl = fetch } = {}) {
@@ -373,26 +456,27 @@ function textBlocks(content) {
 }
 
 export async function generateReply(connection, {
-  apiKey = '', messages, system = '', image = null, signal, localOnly = false, fetchImpl = fetch, onDelta,
+  apiKey = '', messages, system = '', image = null, signal, localOnly = false, fetchImpl = fetch, onDelta, onProgress,
 } = {}) {
   const c = validateConnection(connection, { localOnly });
   checkAbort(signal);
   if (!c.model) fail('MISSING_MODEL', 'Select or enter a model for this connection.');
   const conversation = prepareConversation(messages, system, image, c);
-  const options = { apiKey, signal, localOnly, fetchImpl };
+  const options = { apiKey, signal, localOnly, fetchImpl, onProgress };
   let result;
   let text = '';
   if (c.provider === 'ollama') {
-    if (localOnly || conversation.image) {
-      const { info } = await selectedOllama(c, options);
-      if (conversation.image && ollamaVision(info) !== true) fail('VISION_UNSUPPORTED', 'Ollama did not confirm image support for this model.');
-    }
+    reportProgress(options, 'checking', 'Checking the selected Ollama model…');
+    const selected = await selectedOllama(c, options);
+    if (conversation.image && ollamaVision(selected.info) !== true) fail('VISION_UNSUPPORTED', 'Ollama did not confirm image support for this model.');
+    const ready = await prepareOllamaModel(c, selected, options);
+    reportProgress(options, 'generating', ready ? 'Ollama model ready. Generating a reply…' : 'Ollama is preparing a reply…');
     const nativeMessages = conversation.messages.map((message, index) => ({ ...message,
       ...(conversation.image && index === conversation.latestUser ? { images: [conversation.image.base64] } : {}),
     }));
     if (system) nativeMessages.unshift({ role: 'system', content: system });
     result = await requestJson(c, 'api/chat', options, {
-      method: 'POST', timeoutMs: 180000, body: { model: c.model, messages: nativeMessages, stream: false },
+      method: 'POST', timeoutMs: 180000, body: { model: selected.model, messages: nativeMessages, stream: false },
     });
     text = typeof result.message?.content === 'string' ? result.message.content : '';
   } else if (c.provider === 'openai') {
@@ -431,15 +515,21 @@ export async function generateReply(connection, {
     const parts = result.candidates?.[0]?.content?.parts;
     text = Array.isArray(parts) ? parts.filter(part => part?.thought !== true && typeof part?.text === 'string').map(part => part.text).join('') : '';
   } else {
-    if (c.provider === 'lmstudio' && (localOnly || conversation.image)) {
+    let inferenceModel = c.model;
+    if (c.provider === 'lmstudio') {
+      reportProgress(options, 'checking', 'Checking the selected LM Studio model…');
       const models = await lmStudioModels(c, options);
-      const selected = models.find(model => model.key === c.model);
+      const selected = models.find(model => model.key === c.model || (Array.isArray(model.loaded_instances) &&
+        model.loaded_instances.some(instance => isObject(instance) && instance.id === c.model)));
       if (!selected) fail('MODEL_NOT_INSTALLED', 'The selected model was not found in LM Studio’s model list.');
       if (localOnly && !lmStudioLocalProof(selected)) fail('LOCAL_MODEL_UNVERIFIED', 'LM Studio could not verify that the selected model is installed locally.');
       if (conversation.image && selected.capabilities?.vision !== true) fail('VISION_UNSUPPORTED', 'LM Studio did not confirm image support for this model.');
+      const prepared = await prepareLmStudioModel(c, selected, options);
+      inferenceModel = prepared.model;
+      reportProgress(options, 'generating', prepared.ready ? 'LM Studio model ready. Generating a reply…' : 'LM Studio is preparing a reply…');
     }
     result = await requestJson(c, 'chat/completions', options, { method: 'POST', timeoutMs: 180000,
-      body: { model: c.model, messages: compatibleMessages(conversation), stream: false },
+      body: { model: inferenceModel, messages: compatibleMessages(conversation), stream: false },
     });
     text = textBlocks(result.choices?.[0]?.message?.content);
   }

@@ -85,9 +85,11 @@ test('OpenAI Responses sends stateless requests and attaches images only to the 
     return json({ output: [{ type: 'reasoning', summary: [] }, { type: 'message', content: [{ type: 'output_text', text: 'A window.' }] }] });
   });
   const deltas = [];
-  const reply = await generateReply(config('openai', { supportsVision: true }), { ...server, apiKey: KEY, messages: original, system: 'Stay concise.', image: IMAGE, onDelta: value => deltas.push(value) });
+  const progress = [];
+  const reply = await generateReply(config('openai', { supportsVision: true }), { ...server, apiKey: KEY, messages: original, system: 'Stay concise.', image: IMAGE, onDelta: value => deltas.push(value), onProgress: value => progress.push(value) });
   assert.equal(reply, 'A window.');
   assert.deepEqual(deltas, ['A window.']);
+  assert.deepEqual(progress, [], 'Hosted adapters keep their existing request path');
   assert.equal(original[2].content, 'Describe this.');
 });
 
@@ -196,6 +198,7 @@ test('Ollama native chat verifies local metadata before sending a conversation o
   const server = scripted(
     { models: [localTag()] },
     call => { assert.equal(call.url.pathname, '/api/show'); assert.deepEqual(call.body, { model: 'local-model:exact' }); return json(localInfo()); },
+    { models: [localTag()] },
     call => {
       assert.equal(call.url.pathname, '/api/chat');
       assert.equal(call.body.model, 'local-model:exact');
@@ -222,7 +225,7 @@ for (const [label, tag, info, code] of [
   test('local-only Ollama rejects ' + label + ' before inference', async () => {
     const server = scripted({ models: [tag] }, info);
     await rejectsCode(generateReply(config('ollama', { model: 'local-model:exact' }), { ...server, messages: USER, localOnly: true }), code);
-    assert(server.calls.every(call => call.url.pathname !== '/api/chat'));
+    assert(server.calls.every(call => !['/api/chat', '/api/generate'].includes(call.url.pathname)));
   });
 }
 
@@ -251,13 +254,241 @@ test('LM Studio richer discovery preserves model keys and filters embeddings', a
 });
 
 test('LM Studio local-only image chat checks selected local model then uses compatible format', async () => {
-  const server = scripted({ models: [lmModel()] }, call => {
+  const server = scripted({ models: [lmModel({ loaded_instances: [{ id: 'publisher/model-exact' }] })] }, call => {
     assert.equal(call.url.href, 'http://localhost:1234/v1/chat/completions');
     assert.equal(call.body.model, 'publisher/model-exact');
     assert.equal(call.body.messages[0].content[1].image_url.url, 'data:image/png;base64,' + IMAGE.base64);
     return json({ choices: [{ message: { content: 'Local vision.' } }] });
   });
   assert.equal(await generateReply(config('lmstudio', { model: 'publisher/model-exact', supportsVision: true }), { ...server, messages: USER, image: IMAGE, localOnly: true }), 'Local vision.');
+});
+
+test('cold Ollama requests load without prompts or setting overrides before generating the reply', async () => {
+  const progress = [];
+  const connection = config('ollama', { model: 'local-model:exact', supportsVision: true });
+  const original = structuredClone(connection);
+  const server = scripted(
+    { models: [localTag()] }, localInfo(),
+    call => { assert.equal(call.url.pathname, '/api/ps'); return json({ models: [] }); },
+    call => {
+      assert.equal(call.url.pathname, '/api/generate');
+      assert.deepEqual(call.body, { model: 'local-model:exact', prompt: '', stream: false });
+      assert.equal(progress.at(-1).phase, 'loading');
+      return json({ model: 'local-model:exact', response: '', done: true, done_reason: 'load' });
+    },
+    call => {
+      assert.equal(call.url.pathname, '/api/chat');
+      assert.equal(progress.at(-1).phase, 'generating');
+      assert.equal(call.body.messages[0].content, 'Rules.');
+      assert.deepEqual(call.body.messages[1].images, [IMAGE.base64]);
+      return json({ message: { content: 'Ready.' } });
+    },
+  );
+  assert.equal(await generateReply(connection, { ...server, messages: USER, system: 'Rules.', image: IMAGE,
+    localOnly: true, onProgress: value => progress.push(value) }), 'Ready.');
+  assert.deepEqual(progress.map(value => value.phase), ['checking', 'loading', 'generating']);
+  assert(progress.every(value => value.progress === null && typeof value.text === 'string' && value.text.length > 0));
+  assert.deepEqual(connection, original);
+});
+
+test('Ollama checks server residency each time, skips warm-up while loaded, and reloads after eviction', async () => {
+  const progress = [];
+  const server = scripted(
+    { models: [localTag()] }, localInfo(), { models: [localTag()] }, { message: { content: 'Warm.' } },
+    { models: [localTag()] }, localInfo(), { models: [localTag()] }, { message: { content: 'Still warm.' } },
+    { models: [localTag()] }, localInfo(), { models: [] },
+    { model: 'local-model:exact', response: '', done: true }, { message: { content: 'Loaded again.' } },
+  );
+  for (const expected of ['Warm.', 'Still warm.', 'Loaded again.']) {
+    assert.equal(await generateReply(config('ollama', { model: 'local-model:exact' }), {
+      ...server, messages: USER, localOnly: true, onProgress: value => progress.push(value),
+    }), expected);
+  }
+  assert.equal(server.calls.filter(call => call.url.pathname === '/api/generate').length, 1);
+  assert.equal(progress.filter(value => value.phase === 'loading').length, 1);
+  assert(server.calls.every(call => !call.url.pathname.includes('pull')));
+});
+
+test('a running Ollama entry with a stale digest is not treated as the selected loaded model', async () => {
+  const server = scripted(
+    { models: [localTag()] }, localInfo(), { models: [localTag({ digest: 'older-weights' })] },
+    { model: 'local-model:exact', response: '', done: true }, { message: { content: 'Current weights.' } },
+  );
+  assert.equal(await generateReply(config('ollama', { model: 'local-model:exact' }), { ...server, messages: USER, localOnly: true }), 'Current weights.');
+  assert.equal(server.calls[3].url.pathname, '/api/generate');
+});
+
+test('Ollama preserves untagged :latest profiles while checking and using the installed canonical model', async () => {
+  for (const localOnly of [false, true]) {
+    const connection = config('ollama', { model: 'llama3' });
+    const tag = localTag({ name: 'llama3:latest', model: 'llama3:latest' });
+    const server = scripted({ models: [tag] }, call => {
+      assert.equal(call.url.pathname, '/api/show');
+      assert.deepEqual(call.body, { model: 'llama3:latest' });
+      return json(localInfo());
+    }, { models: [] }, call => {
+      assert.equal(call.url.pathname, '/api/generate');
+      assert.equal(call.body.model, 'llama3:latest');
+      return json({ model: 'llama3:latest', response: '', done: true });
+    }, call => {
+      assert.equal(call.url.pathname, '/api/chat');
+      assert.equal(call.body.model, 'llama3:latest');
+      return json({ message: { content: 'The selected latest model.' } });
+    });
+    assert.equal(await generateReply(connection, { ...server, messages: USER, localOnly }), 'The selected latest model.');
+    assert.equal(connection.model, 'llama3', 'A request must not rewrite the saved profile');
+  }
+  const server = scripted({ models: [localTag({ name: 'llama3:latest', model: 'llama3:latest' })] });
+  await rejectsCode(generateReply(config('ollama', { model: 'llama3:other' }), { ...server, messages: USER }), 'MODEL_NOT_INSTALLED');
+  assert.equal(server.calls.length, 1);
+});
+
+test('explicit cloud-backed Ollama selection never receives a local warm-up request', async () => {
+  const progress = [];
+  const server = scripted(
+    { models: [localTag({ remote_model: 'selected-cloud-model', remote_host: 'https://cloud.example' })] },
+    localInfo(), { message: { content: 'Explicit remote reply.' } },
+  );
+  assert.equal(await generateReply(config('ollama', { model: 'local-model:exact' }), {
+    ...server, messages: USER, onProgress: value => progress.push(value),
+  }), 'Explicit remote reply.');
+  assert.deepEqual(server.calls.map(call => call.url.pathname), ['/api/tags', '/api/show', '/api/chat']);
+  assert.deepEqual(progress.map(value => value.phase), ['checking', 'generating']);
+});
+
+test('LM Studio cold load preserves chat history and targets the returned instance without changing settings', async () => {
+  const progress = [];
+  const connection = config('lmstudio', { model: 'publisher/model-exact', supportsVision: true });
+  const original = structuredClone(connection);
+  const history = [{ role: 'user', content: 'Earlier.' }, { role: 'assistant', content: 'I remember.' }, { role: 'user', content: 'Look now.' }];
+  const server = scripted({ models: [lmModel()] }, call => {
+    assert.equal(call.url.href, 'http://localhost:1234/api/v1/models/load');
+    assert.deepEqual(call.body, { model: 'publisher/model-exact' });
+    assert.equal(call.init.headers.Authorization, 'Bearer ' + KEY);
+    assert.equal(progress.at(-1).phase, 'loading');
+    return json({ type: 'llm', instance_id: 'chosen-instance', status: 'loaded', load_time_seconds: 3.2 });
+  }, call => {
+    assert.equal(call.url.href, 'http://localhost:1234/v1/chat/completions');
+    assert.equal(call.body.model, 'chosen-instance');
+    assert.equal(call.body.stream, false);
+    assert.deepEqual(call.body.messages.slice(0, 3), [{ role: 'system', content: 'Rules.' }, ...history.slice(0, 2)]);
+    assert.equal(call.body.messages[3].content[1].image_url.url, 'data:image/png;base64,' + IMAGE.base64);
+    assert.equal(progress.at(-1).phase, 'generating');
+    return json({ choices: [{ message: { content: 'Your remembered conversation.' } }] });
+  });
+  assert.equal(await generateReply(connection, { ...server, apiKey: KEY, messages: history, system: 'Rules.', image: IMAGE,
+    localOnly: true, onProgress: value => progress.push(value) }), 'Your remembered conversation.');
+  assert.deepEqual(progress.map(value => value.phase), ['checking', 'loading', 'generating']);
+  assert(progress.every(value => value.progress === null));
+  assert.deepEqual(connection, original);
+  assert.deepEqual(history[2], { role: 'user', content: 'Look now.' });
+  assert(server.calls.every(call => !call.url.pathname.includes('download')));
+});
+
+test('LM Studio reuses the existing configured instance instead of reloading it', async () => {
+  const model = lmModel({ loaded_instances: [{ id: 'my-large-context-instance', config: { context_length: 16384, flash_attention: true } }] });
+  const progress = [];
+  const reply = call => {
+    assert.equal(call.url.pathname, '/v1/chat/completions');
+    assert.equal(call.body.model, 'my-large-context-instance');
+    assert.deepEqual(Object.keys(call.body).sort(), ['messages', 'model', 'stream']);
+    return json({ choices: [{ message: { content: 'Warm model.' } }] });
+  };
+  const server = scripted({ models: [model] }, reply, { models: [model] }, reply);
+  for (let turn = 0; turn < 2; turn++) {
+    assert.equal(await generateReply(config('lmstudio', { model: 'publisher/model-exact' }), {
+      ...server, messages: USER, localOnly: true, onProgress: value => progress.push(value),
+    }), 'Warm model.');
+  }
+  assert.deepEqual(progress.map(value => value.phase), ['checking', 'generating', 'checking', 'generating']);
+  assert.equal(server.calls.filter(call => call.url.pathname.endsWith('/load')).length, 0);
+});
+
+test('LM Studio accepts a manually selected loaded-instance ID and preserves that exact instance', async () => {
+  for (const localOnly of [false, true]) {
+    const model = lmModel({ loaded_instances: [
+      { id: 'another-instance', config: { context_length: 4096 } },
+      { id: 'my-manual-instance', config: { context_length: 16384 } },
+    ] });
+    const server = scripted({ models: [model] }, call => {
+      assert.equal(call.url.pathname, '/v1/chat/completions');
+      assert.equal(call.body.model, 'my-manual-instance');
+      assert.deepEqual(Object.keys(call.body).sort(), ['messages', 'model', 'stream']);
+      return json({ choices: [{ message: { content: 'The requested instance.' } }] });
+    });
+    const connection = config('lmstudio', { model: 'my-manual-instance' });
+    assert.equal(await generateReply(connection, { ...server, messages: USER, localOnly }), 'The requested instance.');
+    assert.equal(connection.model, 'my-manual-instance');
+    assert.equal(server.calls.length, 2, 'An already loaded instance must not be loaded again');
+  }
+});
+
+test('malformed local load confirmations fail before any conversation is dispatched', async () => {
+  for (const loaded of [{ done: false }, { model: 'local-model:exact', response: '', done: true, done_reason: 'unload' },
+    { model: 'different-model', response: '', done: true }, { model: 'local-model:exact', response: KEY, done: true }]) {
+    const server = scripted({ models: [localTag()] }, localInfo(), { models: [] }, loaded);
+    await rejectsCode(generateReply(config('ollama', { model: 'local-model:exact' }), { ...server, messages: USER, localOnly: true }), 'INVALID_RESPONSE');
+    assert.equal(server.calls.length, 4);
+  }
+  for (const loaded of [{ status: 'loading', type: 'llm', instance_id: 'instance' },
+    { status: 'loaded', type: 'embedding', instance_id: 'instance' }, { status: 'loaded', type: 'llm', instance_id: '' }]) {
+    const server = scripted({ models: [lmModel()] }, loaded);
+    await rejectsCode(generateReply(config('lmstudio', { model: 'publisher/model-exact' }), { ...server, messages: USER, localOnly: true }), 'INVALID_RESPONSE');
+    assert.equal(server.calls.length, 2);
+  }
+});
+
+for (const provider of ['ollama', 'lmstudio']) {
+  test(provider + ' cancellation during a cold load prevents generation and further progress', async () => {
+    const controller = new AbortController();
+    const progress = [];
+    const pendingLoad = call => new Promise((_resolve, reject) => {
+      call.init.signal.addEventListener('abort', () => reject(new Error(KEY + IMAGE.base64)), { once: true });
+      controller.abort();
+    });
+    const server = provider === 'ollama'
+      ? scripted({ models: [localTag()] }, localInfo(), { models: [] }, pendingLoad)
+      : scripted({ models: [lmModel()] }, pendingLoad);
+    const model = provider === 'ollama' ? 'local-model:exact' : 'publisher/model-exact';
+    await rejectsCode(generateReply(config(provider, { model }), { ...server, messages: USER, localOnly: true,
+      signal: controller.signal, onProgress: value => progress.push(value) }), 'ABORTED');
+    assert.deepEqual(progress.map(value => value.phase), ['checking', 'loading']);
+    assert.equal(server.calls.length, provider === 'ollama' ? 4 : 2);
+  });
+
+  test(provider + ' cold-load timeout is bounded, redacted, and never dispatches chat', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const progress = [];
+    const pendingLoad = call => new Promise((_resolve, reject) => {
+      call.init.signal.addEventListener('abort', () => reject(new Error(KEY)), { once: true });
+      t.mock.timers.tick(5 * 60 * 1000);
+    });
+    const server = provider === 'ollama'
+      ? scripted({ models: [localTag()] }, localInfo(), { models: [] }, pendingLoad)
+      : scripted({ models: [lmModel()] }, pendingLoad);
+    const model = provider === 'ollama' ? 'local-model:exact' : 'publisher/model-exact';
+    await assert.rejects(generateReply(config(provider, { model }), { ...server, messages: USER, localOnly: true,
+      onProgress: value => progress.push(value) }), error => error.code === 'MODEL_LOAD_TIMEOUT' && !String(error).includes(KEY));
+    assert.deepEqual(progress.map(value => value.phase), ['checking', 'loading']);
+    assert.equal(server.calls.length, provider === 'ollama' ? 4 : 2);
+  });
+}
+
+test('a failed loading-status callback cannot fail inference or turn into a provider error', async () => {
+  const server = scripted({ models: [localTag()] }, localInfo(), { models: [localTag()] }, { message: { content: 'Still works.' } });
+  assert.equal(await generateReply(config('ollama', { model: 'local-model:exact' }), {
+    ...server, messages: USER, localOnly: true, onProgress() { throw new Error('Display unavailable'); },
+  }), 'Still works.');
+});
+
+test('cancellation from a loading callback prevents even the warm-up request', async () => {
+  const controller = new AbortController();
+  const server = scripted({ models: [localTag()] }, localInfo(), { models: [] });
+  await rejectsCode(generateReply(config('ollama', { model: 'local-model:exact' }), {
+    ...server, messages: USER, signal: controller.signal, localOnly: true,
+    onProgress(value) { if (value.phase === 'loading') controller.abort(); },
+  }), 'ABORTED');
+  assert.equal(server.calls.length, 3);
 });
 
 test('LM Studio local-only cannot use unknown, remote, or unverified model entries', async () => {

@@ -44,7 +44,7 @@ async function main() {
     clearTimeout(timeout);
     const report = JSON.parse(await fs.readFile(output, 'utf8'));
     await fs.copyFile(output, path.join(destination, 'result.json'));
-    for (const name of ['settings.png', 'character.png']) {
+    for (const name of ['settings.png', 'character.png', 'loading.png', 'recording.png', 'voice.png']) {
       try { await fs.copyFile(path.join(directory, name), path.join(destination, name)); }
       catch (error) { if (report.ok || error.code !== 'ENOENT') throw error; }
     }

@@ -1,6 +1,6 @@
 {
   "name": "desktop-anime-bot",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Windows desktop companion prototype with configurable AI providers and independent desktop permissions",
   "main": "src/main.cjs",

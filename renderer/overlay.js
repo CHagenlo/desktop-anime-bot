@@ -8,6 +8,7 @@ let vrm = null;
 let modelName;
 let avatarEpoch = 0;
 let currentPose = 'idle';
+let microphoneActive = false;
 let perchTarget = 0;
 let perch = 0;
 let look = {x: 0, y: 0};
@@ -87,7 +88,7 @@ function updateLabels() {
   $('pause-companion').setAttribute('aria-label', paused ? 'Resume companion' : 'Pause everything');
   $('state-dot').classList.toggle('paused', paused);
   $('state-dot').classList.toggle('thinking', !paused && currentPose === 'thinking');
-  $('pose-label').textContent = paused ? 'Paused' : currentPose === 'thinking' ? 'Thinking' : dragging ? 'Moving' : perchTarget ? 'Perched' : 'Here with you';
+  $('pose-label').textContent = paused ? 'Paused' : microphoneActive ? 'Listening' : currentPose === 'thinking' ? 'Thinking' : dragging ? 'Moving' : perchTarget ? 'Perched' : 'Here with you';
 }
 
 function applyState(next) {
@@ -460,6 +461,11 @@ function bindInput() {
 
 function handleEvent(event) {
   if (event.type === 'state') applyState(event.state);
+  else if (event.type === 'microphone') {
+    microphoneActive = event.active === true;
+    if (microphoneActive) stopSpeech();
+    updateLabels();
+  }
   else if (event.type === 'cursor') cursorAt(event.x, event.y);
   else if (event.type === 'pose') {
     currentPose = event.pose;
