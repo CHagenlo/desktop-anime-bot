@@ -6,7 +6,7 @@ A Windows desktop companion prototype with a movable 3D character, configurable 
 
 ## Try it on Windows
 
-Version **0.2.0** adds microphone transcription, encrypted conversation memory, and visible local-model loading stages to the Windows x64 installer and portable builds. Downloads are published to [GitHub Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the Windows build, automated tests, package checks, and startup smoke checks succeed. If no matching test release is listed, an installer has not been published for that version yet. The [Windows build page](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) shows its progress.
+Version **0.2.0** adds microphone transcription, encrypted conversation memory, and visible local-model loading stages to the Windows x64 installer and portable builds. **[Download the verified 0.2.0 Windows test build](https://github.com/CHagenlo/desktop-anime-bot/releases/tag/v0.2.0-test.5.1).** Its [Windows build](https://github.com/CHagenlo/desktop-anime-bot/actions/runs/46135949197) passed all 153 automated tests, package checks, and unpacked/portable startup and feature checks. See [verification status](docs/verification.md) for the test scope and remaining hands-on checks. Future downloads appear in [GitHub Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) after the required build gates succeed.
 
 ### Install the app
 

@@ -2,15 +2,17 @@
 
 This record applies to the **Desktop Anime AI Companion 0.2.0** changes: microphone transcription, encrypted conversation persistence, and explicit local-model loading progress. It preserves the earlier 0.1.1 Windows evidence separately from checks for this revision.
 
-## Version 0.2.0: evidence recorded so far
+## Version 0.2.0: verified Windows build
 
 | Area | Recorded result |
 |---|---|
 | Core and conversation-memory tests | **52 of 52 targeted tests pass** in `tests/core.test.mjs` and `tests/memory.test.mjs`. These include encrypted restart restoration, profile and key separation, clear/disable races during encryption, cancellation, damaged storage, unavailable protection, limits, and active-request progress forwarding/reset. |
-| Full revision validation | **153 of 153 tests pass** in the integrated development workspace. The source check also passes, including syntax checks for **29 JavaScript files**. Changes after this checkpoint require their own checks. |
-| Windows build and packaged startup | **A successful 0.2.0 Windows CI run has not yet been recorded in this document.** The earlier run below covers 0.1.1 only. |
+| Full revision validation | **153 of 153 tests pass** in the integrated development workspace and Windows CI. The source check also passes, including syntax checks for **29 JavaScript files**. |
+| Windows build and packaged startup | **Passed in [Windows build 5](https://github.com/CHagenlo/desktop-anime-bot/actions/runs/46135949197)** for source commit `2eeb717bdbc8bd352f44aa66a485feec2652e47b`. The installer and portable executable built successfully. Native compilation/self-test, package verification, helper enumeration, and unpacked/portable startup and feature checks all passed. Both reports recorded no renderer errors. |
 | Live microphone, speech servers, and model loading | Tests use controlled audio/device/provider behavior. Physical microphone recording, live whisper.cpp/OpenAI/custom transcription, and cold-loading real Ollama/LM Studio models still require hands-on checks. |
-| Windows conversation protection | Local memory tests use an authenticated encryption test codec. The new packaged feature gate is configured to exercise Windows protection and restore/clear through a fresh application core, but that Windows result is still pending. A full process restart/upgrade and real user profile remain separate manual checks. |
+| Windows conversation protection | **Passed in both packaged forms.** The check used actual Windows protection to encrypt a fixture conversation, restored it through a fresh application core, and verified that Clear chat removed the saved conversation. A full process restart/upgrade and real user profile remain separate manual checks. |
+| Microphone and model activity | **Passed in both packaged forms.** Synthetic microphone input travelled through the actual recorder, WAV conversion, and loopback transcription endpoint into an editable unsent draft. The recording tracks stopped, and no extra chat request occurred. A loopback Ollama fixture verified the loading stage and indeterminate bar. |
+| Compact layout and visual review | The text box, Record/Stop, and Send controls stayed within the client viewport in idle, loading, recording, and transcript-notice states. The Voice & memory tab opened correctly. The portable build's Windows screenshots at **1008 × 655** were inspected and confirmed the corrected layout. This does not cover every display size or scale setting. |
 
 ### Preserved version 0.1.1 evidence
 
@@ -22,7 +24,7 @@ This record applies to the **Desktop Anime AI Companion 0.2.0** changes: microph
 | Initial visual rendering | The portable build's saved Windows screenshots were inspected: the settings window initialized and the original default character was visible. This covers initial appearance, not every UI control, animation, or display configuration. |
 | Tester desktop and live AI | Hands-on installer use, desktop interaction, actual AI requests, and a user's own avatar/voice have not been verified. No real API keys or sensitive work content were used for these source tests. |
 
-Check the [Windows workflow](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) for the exact source commit and its results. Downloads appear in [Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the required Windows gates succeed. The recorded 0.1.1 passing run verifies that source snapshot; the 0.2.0 changes require their own successful checks.
+Check the [Windows workflow](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) for the exact source commit and its results. Downloads appear in [Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the required Windows gates succeed. Build 5 verifies the 0.2.0 source snapshot named above; the earlier run records 0.1.1 separately. Later documentation-only updates do not change those executable packages.
 
 ## Gates before a test release
 
@@ -38,6 +40,7 @@ The workflow runs on pushes to `main` and supports a manual run. The Windows job
 | Packaged conversation persistence | Uses actual Windows protection to save a fixture conversation, checks that the file excludes its plaintext, constructs a fresh application core from the same profile, verifies restoration and paused state, and checks Clear chat followed by another fresh core. | A new operating-system process, user-account migration, upgrade, or a real person's conversation/keys. |
 | Packaged local-model activity | A loopback Ollama protocol fixture holds the load response until the settings UI visibly shows Loading and an indeterminate bar, then returns a fixture reply and checks that activity clears. | Real model weights, GPU/memory use, load performance, or a live Ollama/LM Studio server. |
 | Packaged microphone-to-draft flow | Checks denial before a recording grant, then uses Chromium's synthetic input through the actual MediaRecorder, 16 kHz WAV conversion, and a loopback transcription fixture. Checks stopped tracks, an editable unsent draft, and no extra chat request. | A physical microphone, Windows device-driver behavior, speech recognition accuracy, or a live speech service. |
+| Chat control visibility | Checks that the text box, microphone control, and Send button fit within the client viewport initially, during loading and recording, and after transcription. Checks that the Voice & memory tab becomes visible and waits for rendered frames before its screenshot. | Every display size, Windows scaling setting, or possible length of user content. |
 | Download verification | Checks both generated executable files, records SHA-256 checksums and package metadata, and rechecks the downloaded artifacts before publishing. | Signing, Windows reputation clearance, or an interactive installer/uninstaller test. |
 
 Smoke checks use temporary profiles separate from the normal `%APPDATA%\DesktopAnimeBot` profile. Synthetic audio is enabled only for diagnostic `--smoke-test` launches. The checks use loopback speech/model fixtures and do not contact a real AI account or open a person's microphone. Reports, process logs, and settings/character/loading/recording/voice screenshots are saved under `dist/smoke/` and uploaded to the workflow's `windows-smoke-reports` artifact when available. The release downloads include `SHA256SUMS.txt` and `package-verification.json`. A failed required gate prevents that run from publishing a new test release.
