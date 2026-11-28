@@ -365,6 +365,7 @@ function animationFrame(now) {
   if (rig.placeholder) posePlaceholder(elapsed, intensity, isSpeaking, isPat);
   else { poseVrm(elapsed, intensity, isSpeaking, isPat); vrm.update(paused ? 0 : delta); }
   renderer.render(scene, camera);
+  if (renderer.domElement.dataset.rendered !== 'true') renderer.domElement.dataset.rendered = 'true';
 }
 
 function inRect(x, y, element) {

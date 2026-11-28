@@ -1,41 +1,67 @@
 # Verification status
 
-This record applies to the current **Desktop Anime AI Companion 0.1.0 source prototype**. It distinguishes checks completed in the build workspace from behavior that still needs testing on Windows.
+This record applies to **Desktop Anime AI Companion 0.1.1**, including its Windows installer and portable packaging. It distinguishes completed checks from the release gates defined in source and the Windows behavior that still needs testing.
 
-## Completed
+## Evidence recorded so far
 
-- **70 automated tests pass**, covering core permissions and cancellation, profile/history separation, credential binding, provider request construction, local-model checks, error redaction, native helper protocol validation, and VRM validation.
-- Provider tests use controlled mock responses. They make no claim about a real account, paid model access, image quality, latency, or current service availability.
-- Native transport tests use simulated helper processes. They verify protocol behavior and rejection paths without executing PowerShell or manipulating Windows applications.
-- Both renderer JavaScript files pass syntax checks. Markup IDs and referenced elements were checked; no duplicate IDs or unresolved static element references were found.
-- Three.js, `GLTFLoader`, `VRMLoaderPlugin`, and required VRM utilities import from the installed pinned dependencies. The inline import-map CSP hash matches its exact contents.
-- The dependency lock records Electron 45.5.0, Three.js 0.187.0, and `@pixiv/three-vrm` 3.6.0. The VRM package's declared Three.js peer range is satisfied.
-- The project source check verifies JavaScript syntax, required files, markup references, local import paths, the CSP hash, and pinned dependency/lock agreement.
+| Area | Recorded result |
+|---|---|
+| Automated source tests | **80 of 80 tests pass** in the development workspace for the 0.1.1 changes. They cover permissions and cancellation, profile/history separation, credential binding, provider requests, local-model checks, error redaction, native protocol validation, VRM validation, and packaging-related logic. |
+| Provider and native test scope | Automated source tests use controlled provider responses and simulated native transports. They do not establish live account access, model compatibility, or actual Windows window behavior. |
+| Windows build and packaged startup | The workflow, package verifier, and unpacked/portable startup smoke gates are configured. **A successful Windows CI run has not yet been recorded in this document.** |
+| Tester desktop and live AI | Hands-on installer use, desktop interaction, actual AI requests, and a user's own avatar/voice have not been verified. No real API keys or sensitive work content were used for these source tests. |
 
-Run the reproducible checks from the project directory:
+Check the [Windows workflow](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) for the exact source commit and its results. Downloads appear in [Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the required Windows gates succeed. A configured workflow or passing source test suite is not evidence that a Windows executable has already built or run successfully.
+
+## Gates before a test release
+
+The workflow runs on pushes to `main` and supports a manual run. Its Windows job must pass these checks before uploading the downloadable packages; the publish job then verifies the downloaded checksums before creating a test prerelease.
+
+| Gate | What it checks | What it does not establish |
+|---|---|---|
+| Source checks and automated tests | JavaScript syntax, required files, markup references, local imports, import-map CSP hash, dependency/lock agreement, and the automated source test suite. | Actual Electron rendering, live provider responses, or real window actions. |
+| Native compilation | Compiles the x64 .NET Framework helper, checks its Windows executable architecture, and runs its JSON protocol self-test. | Correct behavior with every Windows application. |
+| Package verification | Checks required files inside `app.asar`, the renderer's dependency graph including Three.js add-ons, exclusion of development/runtime files, and equality of the packaged helper with the compiled helper. | Complete UI behavior or visual quality. |
+| Packaged native helper | Starts the real packaged helper and requests window enumeration on the Windows runner. | Moving, resizing, minimizing, restoring, undoing, or capturing a user's windows. |
+| Unpacked and portable startup smoke | Launches each packaged form with its own disposable profile; checks settings/preload availability, initial paused state, provider choices, character rendering signals, native enumeration, and encryption/decryption of a fixed dummy string. It also saves settings and character window images. | Interactive installation, upgrade/migration, real API-key use, live chat, animation quality, or every UI control. |
+| Download verification | Checks both generated executable files, records SHA-256 checksums and package metadata, and rechecks the downloaded artifacts before publishing. | Signing, Windows reputation clearance, or an interactive installer/uninstaller test. |
+
+Smoke checks use temporary profiles separate from the normal `%APPDATA%\DesktopAnimeBot` profile. Their reports, window images, and process logs are saved under `dist/smoke/` and uploaded to the workflow's `windows-smoke-reports` artifact when available. The release downloads include `SHA256SUMS.txt` and `package-verification.json`. A failed required gate prevents that run from publishing a new test release.
+
+These are unsigned test builds. Passing CI does not provide code signing or establish readiness for sensitive daily use.
+
+## Reproduce the developer checks
+
+Use Windows x64 with Node.js 22.12.0 or later, npm, and .NET Framework 4.8 or later. From the project directory:
 
 ```powershell
 npm.cmd ci
 npm.cmd run check
 npm.cmd test
+npm.cmd run package:win
+npm.cmd run smoke:windows
+node scripts/smoke-windows.cjs "dist/Desktop-Anime-Bot-Portable-0.1.1-x64.exe" portable
 ```
 
-Passing these checks does not establish Windows runtime compatibility or replace visual testing.
+`package:win` compiles the helper, builds the installer and portable executable, and verifies their packaged contents. `smoke:windows` checks the unpacked application; the final command checks the portable launcher. For an unpacked build only, use `npm.cmd run package:win:dir`.
 
-## Not yet verified
+These commands are for developers. Users of the downloaded installer or portable executable do not need Node.js, npm, or PowerShell setup.
+
+## Windows checks still requiring hands-on validation
 
 | Area | Outstanding verification |
 |---|---|
-| Actual UI rendering | Settings layout, all interactive controls, and the rendered 3D character in a running Electron window. No visual runtime verification was obtained. |
-| Windows runtime | Startup, tray behavior, click-through transparency, drag interaction, hotkeys, and pause/resume. |
-| Window integration | Real enumeration, target matching, perching, movement, resize, minimize, restore, and undo. |
-| Capture | Real `PrintWindow` output across supported/unsupported applications, scaling, occlusion, and display configurations. |
-| Credentials | A real API key stored and unlocked through Windows `safeStorage`. |
-| Providers | Live model discovery, text responses, image input, billing/account access, and failure behavior with real services. |
+| Installer lifecycle | Interactive installation, desktop/Start menu shortcuts, upgrade behavior, uninstall, and retention of the normal user profile. |
+| Portable use | Launching from different folders and use alongside the installed copy with the shared AppData profile. |
+| UI and desktop controls | Settings layout, interactive controls, tray behavior, click-through transparency, drag interaction, head pats, shortcuts, and pause/resume. |
+| Window integration | Real target matching, perching, movement, resize, minimize, restore, and undo against disposable test windows. |
+| Capture | `PrintWindow` output across supported/unsupported applications, scaling, occlusion, and multiple displays. |
+| Credentials and persistence | A real API key protected with Windows `safeStorage`, restart/upgrade behavior, and expected restrictions under a different Windows account. The smoke check uses only a dummy string. |
+| Providers | Live discovery, text replies, image requests, account/model access, latency, and real service failures. |
 | Local runtimes | Installed Ollama/LM Studio versions and actual local/vision model metadata. |
 | Avatar and voice | A user-owned VRM rig, its textures/expressions, local system speech, and resource use on the target PC. |
 
-## First Windows validation session
+### First Windows validation session
 
 Use a disposable, non-sensitive window for the initial desktop checks:
 
@@ -48,14 +74,15 @@ Use a disposable, non-sensitive window for the initial desktop checks:
 7. Check Work/Play restoration, protected-app precedence, launch-paused behavior after restart, and pause/hide/quit controls.
 8. Import an appropriate VRM and exercise head pats, dragging, captions, and optional local speech.
 
-PowerShell policy may legitimately prevent helper startup. Native features remain unavailable in that environment unless the helper is permitted through the machine's normal authorized policy. Do not bypass execution policy to complete this validation.
+Distributed builds require the compiled helper at `resources/native/desktop-window-helper.exe`; they do not execute the source PowerShell loader. Source development may use that loader if the development helper has not been compiled, subject to the machine's normal script policy. The application does not override that policy.
 
 ## Current implementation limits
 
-- Source only: no installer, code signing, automatic updater, or production release pipeline.
+- Windows packages target x64. Windows on ARM has not been verified.
+- No code signing or automatic updater is included.
 - Responses arrive in full; the event named `chat-delta` currently receives the complete response once.
-- No microphone input, persistent memory, autonomous window control, continuous capture, arbitrary shell execution, app typing, or window closing.
-- Capture is an isolated selected-window attempt, not a universal game/video capture system.
-- Avatar motion is procedural and mouth motion approximate; no finished anime asset is supplied.
-- Local-only mode validates endpoint and runtime metadata. It is not a firewall or a sandbox for the local model server.
+- No microphone input, persistent conversational memory, autonomous window control, continuous capture, arbitrary shell execution, app typing, or window closing.
+- Capture is an isolated selected-window attempt and depends on the target application's rendering support.
+- The original test avatar uses procedural animation and approximate mouth movement.
+- Local-only mode validates endpoints and runtime metadata. It does not constrain the local model server's own network access.
 - No independent security audit or claim that this prototype is ready to handle sensitive work content.

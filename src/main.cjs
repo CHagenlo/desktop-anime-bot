@@ -1,8 +1,10 @@
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, dialog, screen, safeStorage, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createHash } = require('node:crypto');
+const { prepareSmoke } = require('./smoke.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const SETTINGS_URL = pathToFileURL(path.join(ROOT, 'renderer/settings.html')).href;
@@ -10,6 +12,7 @@ const OVERLAY_URL = pathToFileURL(path.join(ROOT, 'renderer/overlay.html')).href
 let settingsWindow, overlayWindow, tray, service, cursorTimer, perchTimer;
 let dragging = null, perchAttached = true, polling = false, priorHandle = null, priorReact = false;
 let shuttingDown = false;
+let smoke = null;
 
 function broadcast(event) {
   if (event.type === 'state') {
@@ -127,7 +130,9 @@ async function start() {
   const directory = app.getPath('userData');
   await fs.mkdir(directory, { recursive: true });
   service = new CompanionApplication({ settings: new SettingsStore(directory), secrets: new SecretStore(directory, electronSecretCodec(safeStorage)),
-    native: new WindowsBridge({ excludedPids: [process.pid] }), providers, emit: broadcast });
+    native: new WindowsBridge({ excludedPids: [process.pid], packaged: app.isPackaged,
+      helperExecutablePath: app.isPackaged ? path.join(process.resourcesPath, 'native', 'desktop-window-helper.exe') : undefined,
+      allowPowerShellFallback: !app.isPackaged }), providers, emit: broadcast });
   await service.initialize();
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
@@ -142,6 +147,7 @@ async function start() {
     resizable: false, skipTaskbar: true, focusable: false, show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
   secureWindow(settingsWindow, SETTINGS_URL); secureWindow(overlayWindow, OVERLAY_URL);
+  smoke?.attach(settingsWindow, 'settings'); smoke?.attach(overlayWindow, 'character');
   settingsWindow.on('close', event => { if (!shuttingDown) { event.preventDefault(); settingsWindow.hide(); } });
   overlayWindow.on('close', () => { if (!shuttingDown) app.quit(); });
   registerApi();
@@ -176,13 +182,22 @@ async function start() {
     } finally { polling = false; }
   }, 700);
   service.publish();
+  if (smoke) await smoke.verify({ settingsWindow, overlayWindow, service, credentialCodec: electronSecretCodec(safeStorage) });
 }
 
 app.setName('DesktopAnimeBot');
+if (process.platform === 'win32') app.setAppUserModelId('io.github.chagenlo.desktopanimebot');
+smoke = prepareSmoke(app);
+if (!smoke) {
+  const profileDirectory = path.join(app.getPath('appData'), 'DesktopAnimeBot');
+  fsSync.mkdirSync(profileDirectory, { recursive: true });
+  app.setPath('userData', profileDirectory);
+}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => openSettings());
-  app.whenReady().then(start).catch(error => {
+  app.whenReady().then(start).catch(async error => {
+    if (smoke) { await smoke.fail(error); return; }
     dialog.showErrorBox('Desktop Anime Bot could not start', error.message || 'Startup failed.');
     app.quit();
   });

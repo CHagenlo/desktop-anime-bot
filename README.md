@@ -1,43 +1,47 @@
 # Desktop Anime AI Companion
 
-A Windows desktop companion **source prototype** with a movable 3D character, configurable AI connections, and explicit controls for desktop access. The character can react to the cursor, perch on an approved selected window, chat through your chosen AI service, and perform a small set of window actions that you request.
+A Windows desktop companion prototype with a movable 3D character, configurable AI connections, and explicit controls for desktop access. The character can react to the cursor, perch on an approved selected window, chat through your chosen AI service, and perform a small set of window actions that you request.
 
 **Naming is still open.** “Sillie” for the app and `sillie-desktop` for a repository are suggested working names awaiting your choice. The current source directory and package use `desktop-anime-bot`; the Electron application identifier is `DesktopAnimeBot`.
+
+## Try it on Windows
+
+Version **0.1.1** adds Windows x64 installer and portable test builds. Downloads are published to [GitHub Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the Windows build, automated tests, package checks, and startup smoke checks succeed. If no matching test release is listed, an installer has not been published for that version yet. The [Windows build page](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) shows its progress.
+
+### Install the app
+
+1. Open [Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) and choose the newest successful Windows test build.
+2. Under **Assets**, download **`Desktop-Anime-Bot-Setup-0.1.1-x64.exe`**. The **Source code** ZIP is for developers.
+3. Open the downloaded installer. It installs for your Windows account and creates Start menu and desktop shortcuts.
+4. Open **Desktop Anime Bot**. Review the settings, add an AI connection, and select **Resume companion** when ready.
+
+The download includes Electron, the original test character, and a compiled Windows window helper. **You do not need Node.js, npm, or PowerShell setup to use an installed build.** Conversation still requires your own AI API key or a separately configured local model server.
+
+These are **unsigned test builds**. Windows may show an unknown publisher or a reputation warning. If Windows or your organization's policy blocks the executable, leave those protections enabled; report the block with the release version. Code signing and automatic updates are not included yet.
+
+### Run without installing
+
+Download **`Desktop-Anime-Bot-Portable-0.1.1-x64.exe`** from the same release and open it. It launches without an installation wizard or shortcuts. Although the executable extracts its runtime files temporarily, your settings, encrypted keys, and imported avatar are saved in **`%APPDATA%\DesktopAnimeBot`**, just as with the installed version. The portable version shares that profile on the same Windows account; it does not keep your profile beside the executable.
+
+### Windows requirements
+
+- **Windows 10 22H2 or Windows 11, x64**. These builds target Intel/AMD 64-bit Windows; Windows on ARM has not been verified.
+- **.NET Framework 4.8 or later** for the included window helper. Windows 10 22H2 and Windows 11 include a compatible version. See [Microsoft's Framework installation information](https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-10).
+- Network access to the chosen hosted AI provider, or a separately installed Ollama/LM Studio server and model for local AI. The companion does not download AI models.
+
+The settings window and character open together. **Every launch starts paused**, even if the previous session was running. Closing the settings window hides it; use the tray menu or **Quit** to exit the application completely. Uninstalling the installed app preserves the profile in `%APPDATA%\DesktopAnimeBot`.
 
 ## What is included
 
 - An Electron settings window with **Chat**, **AI connections**, **Desktop privacy**, and **Character** tabs.
-- A transparent character overlay with an original procedural 3D stand-in, cursor look, blinking, head pats, dragging, and a simple sitting pose.
+- A transparent character overlay with an original procedural 3D test avatar, cursor look, blinking, head pats, dragging, and a simple sitting pose.
 - Import of a self-contained `.vrm` avatar, with a maximum size of 50 MiB.
 - Saved AI profiles, password-style key entry, model discovery, and manual model IDs.
 - Three independent desktop capability switches, protected per-app rules, Work/Play presets, and pause/resume controls.
 - Selected-window descriptions on explicit request, plus direct move, resize, minimize, restore, and single-action undo controls.
 - Optional spoken replies through an installed **local system voice**.
 
-This is version 0.1.0 source, not an installer or a finished commercial character. There is no microphone input, token-by-token response streaming, persistent conversational memory, autonomous tool loop, or continuous screen-watching mode. Windows runtime behavior, real API keys, live provider calls, and visual rendering have not yet been verified. See [verification status](docs/verification.md).
-
-## Run on Windows
-
-### Requirements
-
-- A Windows desktop with **Node.js 22 or later** and npm.
-- Network access for the initial dependency/Electron download. Hosted AI use also requires access to the selected provider.
-- For local AI, a separately installed and running Ollama or LM Studio server with a suitable model. This project does not install or download AI models.
-- The bundled Windows PowerShell helper must be permitted by your machine's normal policy for native window features. The application does not alter or bypass PowerShell policy.
-
-Extract the project and open a terminal **inside the `desktop-anime-bot` folder**, then run:
-
-```powershell
-node --version
-npm.cmd ci
-npm.cmd run check
-npm.cmd test
-npm.cmd start
-```
-
-`npm.cmd ci` installs the exact dependencies in `package-lock.json`, including Electron's setup step. The `npm.cmd` form is usable from either Command Prompt or PowerShell on Windows. Keep the source folder and its installed `node_modules` together when starting the app.
-
-The settings window and character open together. **Every launch starts paused**, even if the previous session was running. Configure your choices, then select **Resume companion**. Closing the settings window hides it; use the tray menu or **Quit** to exit the application completely.
+This is a development test release. The avatar animation and mouth movement are basic. There is no microphone input, token-by-token response streaming, persistent conversational memory, autonomous tool loop, or continuous screen-watching mode. A successful automated build does not establish live AI compatibility or reliable interaction with every Windows application. See [verification status](docs/verification.md) for the checks performed and the remaining Windows testing.
 
 ## First conversation
 
@@ -144,7 +148,7 @@ If another application already owns a shortcut, use the tray menu. Hiding the ch
 
 ## Data and credentials
 
-Application data is stored in Electron's user-data directory, normally `%APPDATA%\DesktopAnimeBot` on Windows:
+The application explicitly stores its normal Windows profile in **`%APPDATA%\DesktopAnimeBot`**. Installed and portable builds use the same location, and the installer preserves it during uninstall:
 
 | File/data | Contents |
 |---|---|
@@ -161,12 +165,46 @@ The renderer receives only a `hasKey` flag. Keys are bound to the provider, norm
 |---|---|
 | Chat is disabled | Resume the companion, select a profile, choose a model, and check local-only mode. |
 | Discovery fails | Save endpoint/key changes first, confirm server availability and credentials, or enter a supported model ID manually. |
-| Native windows are unavailable | Confirm Windows PowerShell and the bundled helper are permitted in the environment. Machine policy may block execution. Do not change or bypass policy as a workaround; native features can remain unavailable while you use chat and the avatar. |
+| No installer is listed | Check the Windows workflow for the desired version. Downloads are published only after all release gates pass. |
+| Windows reports an unknown publisher | This test release is unsigned. Keep Windows and organization protections enabled, and include the exact release version when reporting a block. |
+| Native windows are unavailable in an installed build | Check the error message, the Windows/.NET Framework requirements, and whether security software blocked the included helper. A distributed build uses its compiled helper and does not fall back to a PowerShell script. |
 | Target changed or closed | Refresh and select the window again. The exact title, PID, executable, and handle are checked. |
 | Window capture fails | Restore the window and use a non-sensitive test window that supports capture. The app intentionally has no whole-desktop fallback. |
 | Window controls stay disabled | Check pause state, the global switch, the app's permission column, and its Protected flag. |
 | The avatar does not load | Check the VRM format, embedded resources, and 50 MiB limit. Open settings to import another model. |
 | No spoken reply | Enable the speech setting and make an installed local system voice available. Captions remain usable. |
+
+## Develop and build from source
+
+These commands are for developers. Installed and portable users can use the download instructions above.
+
+For a Windows build, use Windows x64 with **Node.js 22.12.0 or later**, npm, and .NET Framework 4.8 or later. The native build script uses the .NET Framework C# compiler already present in a suitable Windows installation. The initial dependency and packaging-tool downloads require network access.
+
+Clone or extract this repository, open a terminal inside `desktop-anime-bot`, and run:
+
+```powershell
+npm.cmd ci
+npm.cmd run check
+npm.cmd test
+npm.cmd run package:win
+npm.cmd run smoke:windows
+node scripts/smoke-windows.cjs "dist/Desktop-Anime-Bot-Portable-0.1.1-x64.exe" portable
+```
+
+`package:win` compiles the native helper, builds both executables, checks the packaged renderer dependency graph and helper, and writes checksums. The resulting downloads are in `dist/`:
+
+- `Desktop-Anime-Bot-Setup-0.1.1-x64.exe`
+- `Desktop-Anime-Bot-Portable-0.1.1-x64.exe`
+- `SHA256SUMS.txt`
+- `package-verification.json`
+
+For an unpacked application directory, use `npm.cmd run package:win:dir`. To run the source during development, use `npm.cmd start`. `npm.cmd run build:native` builds only the Windows helper. If the development executable has not been compiled, source mode may use its bundled PowerShell loader under the machine's normal script policy; it does not change or bypass that policy. Distributed apps require the compiled helper at `resources/native/desktop-window-helper.exe` and do not ship the PowerShell loader.
+
+### GitHub builds and test releases
+
+[`.github/workflows/windows-build.yml`](.github/workflows/windows-build.yml) runs on pushes to `main` and supports a manual **Run workflow**. Its Windows job installs the locked dependencies, runs source checks and tests, compiles/packages the app, verifies packaged files, and runs startup smoke checks of both the unpacked app and portable executable with disposable profiles. These checks must pass before the downloads are uploaded. Smoke reports and window images are available as workflow artifacts when produced.
+
+A separate publish job creates a **prerelease** for a successful build of `main`, using a unique tag such as `v0.1.1-test.RUN.ATTEMPT`. Releases include both executables, their SHA-256 checksums, package verification details, and the source commit link. A failed build does not publish a new download. The app does not update itself automatically; install or open a newer test build explicitly.
 
 ## How it is put together
 
@@ -177,8 +215,10 @@ The renderer receives only a `hasKey` flag. Keys are bound to the provider, norm
 | `src/main.cjs` | Electron windows, IPC sender validation, tray, shortcuts, avatar import, cursor/perch placement. |
 | `src/core/` | Configuration, operation cancellation, permissions, credentials, conversations, and target checks. |
 | `src/providers/` | Provider-specific discovery and generation protocols; all AI network calls. |
-| `src/native/` | Windows-only helper protocol, Win32 window operations, and isolated capture. |
+| `src/native/` | Compiled Windows helper source, fixed protocol, window operations, and isolated capture; PowerShell loader for source development only. |
 | `tests/` | Offline tests with mocked provider and native transports. |
+| `scripts/` | Native compilation, package verification, source checks, and Windows startup smoke checks. |
+| `electron-builder.config.cjs` | Windows x64 installer/portable packaging and resource inclusion. |
 
 Renderers use context isolation, sandboxing, restrictive CSPs, and no direct outbound network access. Model and window text is inserted with `textContent`. Privileged operations are validated in the main/core process rather than left to a model instruction. The security approach follows the relevant principles in [Electron's security guide](https://www.electronjs.org/docs/latest/tutorial/security); it has not received an independent security audit.
 

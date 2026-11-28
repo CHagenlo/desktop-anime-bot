@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HELPER_PATH = fileURLToPath(new URL('./windows-helper.ps1', import.meta.url));
+const DEVELOPMENT_EXECUTABLE = fileURLToPath(new URL('../../build/native/desktop-window-helper.exe', import.meta.url));
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_CAPTURE_BASE64 = 12 * 1024 * 1024;
 const ACTIONS = new Set(['move', 'resize', 'minimize', 'restore']);
@@ -19,7 +21,9 @@ const MESSAGES = {
   CAPTURE_UNSUPPORTED: 'The selected window could not be captured in isolation.',
   CAPTURE_BLANK: 'The selected window did not render usable content. Capture stopped.',
   CAPTURE_TOO_LARGE: 'The selected window is too large for this prototype to capture.',
-  HELPER_START_FAILED: 'The Windows helper could not start. Check local PowerShell script policy; the app does not change it.',
+  HELPER_NOT_FOUND: 'The Windows helper is missing. Reinstall the app, or build the native helper when running from source.',
+  HELPER_START_FAILED: 'The bundled Windows helper could not start. Check that Windows can run the app installation.',
+  DEVELOPMENT_HELPER_START_FAILED: 'The development helper could not start. Build the compiled native helper; no execution-policy change is required.',
   HELPER_EXITED: 'The Windows helper stopped before the operation completed.',
   HELPER_TIMEOUT: 'The selected application or Windows helper did not respond in time.',
   HELPER_PROTOCOL: 'The Windows helper returned an invalid response.',
@@ -100,8 +104,40 @@ function normalizedAction(action) {
   return { type: action.type };
 }
 
+/** Resolve only app-owned helper locations. A packaged app never falls back to a script. */
+export function resolveWindowsHelperLaunch({
+  helperExecutablePath,
+  resourcesPath = process.resourcesPath,
+  packaged = false,
+  allowPowerShellFallback = !packaged,
+  existsSyncImpl = existsSync,
+  systemRoot = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows',
+} = {}) {
+  const compiled = candidate => {
+    if (typeof candidate !== 'string' || !path.win32.isAbsolute(candidate) ||
+        path.win32.extname(candidate).toLowerCase() !== '.exe' || candidate.includes('\0')) fail('INVALID_REQUEST');
+    if (!existsSyncImpl(candidate)) fail('HELPER_NOT_FOUND');
+    return { executable: candidate, args: [], kind: 'compiled' };
+  };
+  if (helperExecutablePath !== undefined) return compiled(helperExecutablePath);
+  if (packaged) {
+    if (typeof resourcesPath !== 'string' || !path.win32.isAbsolute(resourcesPath)) fail('HELPER_NOT_FOUND');
+    return compiled(path.win32.join(resourcesPath, 'native', 'desktop-window-helper.exe'));
+  }
+  if (existsSyncImpl(DEVELOPMENT_EXECUTABLE)) {
+    return { executable: DEVELOPMENT_EXECUTABLE, args: [], kind: 'compiled' };
+  }
+  if (!allowPowerShellFallback || !existsSyncImpl(HELPER_PATH)) fail('HELPER_NOT_FOUND');
+  return {
+    executable: path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', HELPER_PATH],
+    kind: 'powershell',
+  };
+}
+
 /**
- * Fixed NDJSON protocol to a hidden, persistent Windows PowerShell helper.
+ * Fixed NDJSON protocol to a hidden, persistent compiled Windows helper.
+ * A development-only PowerShell loader is available when explicitly allowed.
  * No shell is used, and no user/model text is interpolated into commands.
  * Bounds and movement amounts are physical pixels, not Electron DIP values.
  */
@@ -111,6 +147,11 @@ export class WindowsBridge {
     spawnImpl = spawn,
     timeoutMs = 12000,
     excludedPids = [process.pid],
+    helperExecutablePath,
+    resourcesPath = process.resourcesPath,
+    packaged = false,
+    allowPowerShellFallback = !packaged,
+    existsSyncImpl = existsSync,
   } = {}) {
     this.platform = platform;
     this.spawnImpl = spawnImpl;
@@ -120,6 +161,7 @@ export class WindowsBridge {
     this.pending = new Map();
     this.nextId = 1;
     this.disposed = false;
+    this.launchOptions = { helperExecutablePath, resourcesPath, packaged, allowPowerShellFallback, existsSyncImpl };
   }
 
   async listWindows() {
@@ -196,29 +238,32 @@ export class WindowsBridge {
 
   ensureWorker() {
     if (this.worker) return;
-    const systemRoot = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows';
-    const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const child = this.spawnImpl(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', HELPER_PATH], {
+    const launch = resolveWindowsHelperLaunch(this.launchOptions);
+    const child = this.spawnImpl(launch.executable, launch.args, {
       windowsHide: true,
       shell: false,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const worker = { child, buffer: '', started: false };
+    const worker = { child, buffer: '', started: false, kind: launch.kind };
     this.worker = worker;
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', chunk => this.receive(worker, chunk));
-    // Never surface raw PowerShell diagnostics; they may contain local paths or request data.
+    // Never surface raw helper diagnostics; they may contain local paths or request data.
     child.stderr.on('data', () => {});
     child.stdin.on('error', () => {
-      if (this.worker === worker) this.stopWorker(worker.started ? 'HELPER_EXITED' : 'HELPER_START_FAILED');
+      if (this.worker === worker) this.stopWorker(worker.started ? 'HELPER_EXITED' : this.startFailureCode(worker));
     });
     child.on('error', () => {
-      if (this.worker === worker) this.stopWorker('HELPER_START_FAILED');
+      if (this.worker === worker) this.stopWorker(this.startFailureCode(worker));
     });
     child.on('close', () => {
-      if (this.worker === worker) this.stopWorker(worker.started ? 'HELPER_EXITED' : 'HELPER_START_FAILED');
+      if (this.worker === worker) this.stopWorker(worker.started ? 'HELPER_EXITED' : this.startFailureCode(worker));
     });
+  }
+
+  startFailureCode(worker) {
+    return worker.kind === 'powershell' ? 'DEVELOPMENT_HELPER_START_FAILED' : 'HELPER_START_FAILED';
   }
 
   receive(worker, chunk) {
@@ -245,7 +290,7 @@ export class WindowsBridge {
         continue;
       }
       if (response.id === null && response.ok === false) {
-        this.stopWorker('HELPER_START_FAILED');
+        this.stopWorker(this.startFailureCode(worker));
         return;
       }
       const pending = this.pending.get(response.id);

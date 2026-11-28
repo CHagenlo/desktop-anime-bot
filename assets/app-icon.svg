@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<!-- Original geometric app icon. -->
+<rect x="8" y="8" width="240" height="240" rx="53" fill="#332846"/>
+<rect x="34" y="39" width="188" height="179" rx="22" fill="#201a2d" stroke="#b6a5da" stroke-width="6"/>
+<path d="M37 78H219" stroke="#b6a5da" stroke-width="5"/>
+<circle cx="56" cy="59" r="5" fill="#9ed7c1"/><circle cx="74" cy="59" r="5" fill="#b6a5da"/>
+<path d="M160 56H200" stroke="#b6a5da" stroke-width="5" stroke-linecap="round"/>
+<ellipse cx="128" cy="151" rx="61" ry="53" fill="#b6a5da"/>
+<path d="M81 128L93 99L110 115M146 115L163 99L175 128" fill="#b6a5da"/>
+<ellipse cx="104" cy="147" rx="8" ry="12" fill="#201a2d"/>
+<ellipse cx="152" cy="147" rx="8" ry="12" fill="#201a2d"/>
+<path d="M112 171Q128 186 144 171" fill="none" stroke="#201a2d" stroke-width="6" stroke-linecap="round"/>
+<ellipse cx="87" cy="167" rx="10" ry="5" fill="#d99ac3"/><ellipse cx="169" cy="167" rx="10" ry="5" fill="#d99ac3"/>
+<path d="M110 205L128 195L146 205L128 215Z" fill="#9ed7c1"/>
+</svg>
