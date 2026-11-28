@@ -8,10 +8,11 @@ This record applies to **Desktop Anime AI Companion 0.1.1**, including its Windo
 |---|---|
 | Automated source tests | **80 of 80 tests pass** in the development workspace for the 0.1.1 changes. They cover permissions and cancellation, profile/history separation, credential binding, provider requests, local-model checks, error redaction, native protocol validation, VRM validation, and packaging-related logic. |
 | Provider and native test scope | Automated source tests use controlled provider responses and simulated native transports. They do not establish live account access, model compatibility, or actual Windows window behavior. |
-| Windows build and packaged startup | The workflow, package verifier, and unpacked/portable startup smoke gates are configured. **A successful Windows CI run has not yet been recorded in this document.** |
+| Windows build and packaged startup | **Passed in [Windows build 2](https://github.com/CHagenlo/desktop-anime-bot/actions/runs/46130508477)** for source commit `663f193015d4fd1b2a219a6bb55634fe36320643`. Both executable packages built; native compilation/self-test, seven packaged renderer modules, helper enumeration, and unpacked/portable startup checks passed. Both startup reports recorded no renderer errors. |
+| Initial visual rendering | The portable build's saved Windows screenshots were inspected: the settings window initialized and the original default character was visible. This covers initial appearance, not every UI control, animation, or display configuration. |
 | Tester desktop and live AI | Hands-on installer use, desktop interaction, actual AI requests, and a user's own avatar/voice have not been verified. No real API keys or sensitive work content were used for these source tests. |
 
-Check the [Windows workflow](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) for the exact source commit and its results. Downloads appear in [Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the required Windows gates succeed. A configured workflow or passing source test suite is not evidence that a Windows executable has already built or run successfully.
+Check the [Windows workflow](https://github.com/CHagenlo/desktop-anime-bot/actions/workflows/windows-build.yml) for the exact source commit and its results. Downloads appear in [Releases](https://github.com/CHagenlo/desktop-anime-bot/releases) only after the required Windows gates succeed. The recorded passing run verifies that source snapshot; later code changes require their own successful checks.
 
 ## Gates before a test release
 
