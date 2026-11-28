@@ -15,6 +15,8 @@ Version **0.2.0** adds microphone transcription, encrypted conversation memory, 
 3. Open the downloaded installer. It installs for your Windows account and creates Start menu and desktop shortcuts.
 4. Open **Desktop Anime Bot**. Review the settings, add an AI connection, and select **Resume companion** when ready.
 
+To update an existing copy, choose **Quit** in the app or its tray menu before opening the new installer or portable executable. Closing Settings only hides it. The new version uses the same saved connections, keys, and character settings in `%APPDATA%\DesktopAnimeBot`. Conversation persistence applies to chats saved by 0.2.0; it cannot recover conversations from earlier sessions that were never written to disk.
+
 The download includes Electron, the original test character, and a compiled Windows window helper. **You do not need Node.js, npm, or PowerShell setup to use an installed build.** Conversation still requires your own AI API key or a separately configured local model server.
 
 These are **unsigned test builds**. Windows may show an unknown publisher or a reputation warning. If Windows or your organization's policy blocks the executable, leave those protections enabled; report the block with the release version. Code signing and automatic updates are not included yet.

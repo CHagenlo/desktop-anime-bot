@@ -46,7 +46,17 @@ async function verifyFeatures({ app, settingsWindow, service, credentialCodec, p
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const baseUrl = 'http://127.0.0.1:' + server.address().port;
   const evaluate = expression => settingsWindow.webContents.executeJavaScript(expression);
-  const screenshot = async name => fs.writeFile(path.join(directory, name + '.png'), (await settingsWindow.webContents.capturePage()).toPNG());
+  const paint = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const screenshot = async name => {
+    await paint();
+    await fs.writeFile(path.join(directory, name + '.png'), (await settingsWindow.webContents.capturePage()).toPNG());
+  };
+  const checkComposer = () => poll(settingsWindow, `(() => ({ controls: ['chat-input', 'microphone-toggle', 'send-message'].map(id => {
+    const element = document.getElementById(id), box = element.getBoundingClientRect();
+    return { id, visible: element.checkVisibility() && box.width > 0 && box.height > 0 &&
+      box.top >= 0 && box.left >= 0 && box.bottom <= innerHeight && box.right <= innerWidth,
+      top: box.top, bottom: box.bottom, viewportHeight: innerHeight };
+  }) }))()`, value => value.controls.every(control => control.visible));
   const reloadCore = async () => {
     const profile = app.getPath('userData');
     const restored = new CompanionApplication({ settings: new storage.SettingsStore(profile),
@@ -60,6 +70,7 @@ async function verifyFeatures({ app, settingsWindow, service, credentialCodec, p
     if (!initial.config.memory.enabled || initial.config.speech.enabled || !initial.status.memoryAvailable || initial.speechProviders?.length !== 3) {
       throw new Error('Voice or protected-memory defaults did not initialize.');
     }
+    await checkComposer();
     const denied = await evaluate(`(async () => {
       try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         stream.getTracks().forEach(track => track.stop()); return false; }
@@ -75,6 +86,7 @@ async function verifyFeatures({ app, settingsWindow, service, credentialCodec, p
       phase: document.getElementById('model-activity').dataset.phase,
       indeterminate: !document.getElementById('model-activity-progress').hasAttribute('value') }))()`,
     value => value.visible && value.phase === 'loading' && value.indeterminate);
+    await checkComposer();
     await screenshot('loading');
     releaseLoad();
     await poll(settingsWindow, `(() => ({ reply: document.getElementById('chat-messages').textContent.includes(${JSON.stringify(reply)}),
@@ -104,6 +116,7 @@ async function verifyFeatures({ app, settingsWindow, service, credentialCodec, p
     })()`);
     await poll(settingsWindow, `({ phase: document.getElementById('microphone-toggle').dataset.phase })`, value => value.phase === 'recording');
     await new Promise(resolve => setTimeout(resolve, 1200));
+    await checkComposer();
     await screenshot('recording');
     await evaluate(`document.getElementById('microphone-toggle').click()`);
     await poll(settingsWindow, `({ phase: document.getElementById('microphone-toggle').dataset.phase,
@@ -114,11 +127,14 @@ async function verifyFeatures({ app, settingsWindow, service, credentialCodec, p
     if (chatRequests !== 1 || audioRequests !== 1 || audioBytes < 1000 || service.getState().messages.length) {
       throw new Error('The microphone did not produce one WAV transcription into an unsent draft.');
     }
+    await checkComposer();
     await evaluate(`document.querySelector('[data-tab="voice"]').click()`);
+    await poll(settingsWindow, `({ visible: !document.getElementById('panel-voice').hidden,
+      selected: document.querySelector('[data-tab="voice"]').getAttribute('aria-current') })`, value => value.visible && value.selected === 'page');
     await screenshot('voice');
     return { encryptedMemoryRoundTrip: true, clearChatErasesSavedMemory: true, localModelLoadingIndicator: true,
       microphoneDeniedWithoutGrant: true, microphoneSyntheticCapture: true, microphoneTracksReleased: true,
-      transcriptionWavTransport: true, transcriptIsUnsentDraft: true,
+      transcriptionWavTransport: true, transcriptIsUnsentDraft: true, chatControlsVisible: true, voiceSettingsVisible: true,
       speechAndModelResponses: 'loopback fixtures; live models and physical microphone not tested' };
   } finally {
     releaseLoad();

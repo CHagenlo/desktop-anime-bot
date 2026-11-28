@@ -54,3 +54,69 @@
 @media(max-width:1120px){.voice-layout{grid-template-columns:minmax(0,1fr)}.voice-side{display:grid;grid-template-columns:1fr 1fr;gap:18px}.voice-composer{flex-wrap:wrap}.voice-composer-copy{flex-basis:200px}.voice-setup{margin-left:auto}}
 @media(max-width:800px){.voice-side{grid-template-columns:1fr;gap:0}.voice-composer-copy{flex-basis:calc(100% - 125px)}.voice-setup{margin:0 0 0 auto}.microphone-session{flex-wrap:wrap}.microphone-session-copy{flex-direction:column;align-items:flex-start;gap:2px}.microphone-session .text-button{margin-left:auto}.chat-empty{padding:20px 16px}.chat-empty h2{font-size:22px}.welcome-orb{height:55px;width:55px}.welcome-orb:before{left:15px;top:23px}.welcome-orb:after{right:15px;top:23px}.welcome-orb i{left:23px;top:35px}}
 @media(prefers-reduced-motion:reduce){.recording-dot,#model-activity-progress:not([value])::-webkit-progress-bar{animation:none!important}}
+
+/* Reserve the available window height for Chat; only its conversation scrolls.
+   The other settings tabs keep their own main-pane scrolling. */
+html,body{height:100%;overflow:hidden}
+.app-shell{height:100vh;height:100dvh;min-height:0;grid-template-rows:minmax(0,1fr);overflow:hidden}
+.sidebar{position:relative;height:100%;min-height:0}
+.main{height:100%;min-height:0;display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain}
+.main>*{flex-shrink:0}
+.main:has(#panel-chat:not([hidden])){overflow:hidden}
+#panel-chat{display:flex;flex-direction:column;flex:1 1 0;min-height:0}
+#panel-chat>.chat-route,#panel-chat>.footnote{flex-shrink:0}
+.chat-panel{flex:1 1 0;min-height:0;height:auto;max-height:none}
+.chat-messages,.chat-empty{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.chat-empty{justify-content:flex-start;justify-content:safe center}
+.chat-empty>*{flex-shrink:0}
+.chat-composer{flex:none}
+#app-status{max-height:120px;overflow-y:auto}
+#model-activity-text{max-height:4.5em;overflow-y:auto}
+
+@media(max-height:760px){
+  .main{padding:18px 24px 16px}
+  .page-header{margin-bottom:14px}
+  .page-header .eyebrow{display:none}
+  .page-header h1{font-size:27px;line-height:1.15;margin-bottom:6px;letter-spacing:-.8px}
+  .page-header p:last-child{font-size:12px;line-height:1.5}
+  .chat-route{padding:10px 14px;margin-bottom:10px}
+  .chat-panel-top{padding:8px 14px}
+  .chat-messages{padding:14px 16px}
+  .message{margin-bottom:17px}
+  .chat-empty{padding:10px 14px}
+  .chat-empty .welcome-orb{display:none}
+  .chat-empty h2{font-size:19px;line-height:1.2;margin:0 0 8px}
+  .chat-empty p{font-size:11px;line-height:1.5}
+  .prompt-chips{margin-top:10px}
+  .chat-composer{margin:0 12px 12px;padding:8px 11px}
+  .chat-composer textarea{height:48px;min-height:48px}
+  .voice-composer{padding-top:8px;margin-top:6px}
+  .composer-bottom{margin-top:8px}
+  #panel-chat>.footnote{font-size:9px;line-height:1.5;margin-top:7px}
+  #app-status{padding:10px 13px;margin-bottom:12px}
+  .model-activity{padding:11px 14px;margin-bottom:12px}
+  .activity-heading{margin-bottom:8px}
+  #model-activity-text{margin-top:3px;line-height:1.45}
+  .activity-details{margin-top:5px}
+  .microphone-session{padding:10px 13px;margin-bottom:12px}
+  .sidebar{padding-top:20px;padding-bottom:14px}
+  .brand{margin-bottom:24px}
+  .nav-item{padding:10px 11px;gap:10px;font-size:13px}
+  .sidebar-bottom{padding-top:18px}
+  .companion-card{padding:12px;margin-bottom:10px}
+  .small-orb{width:28px;height:28px;margin-bottom:8px}
+  .sidebar-foot{margin-top:14px}
+}
+@media(max-height:640px){
+  .page-header h1{font-size:25px}
+  .page-header{margin-bottom:11px}
+  .chat-empty h2{display:none}
+  .chat-panel-top{padding:6px 12px}
+  .companion-card .small-orb{display:none}
+}
+/* If the OS forces an exceptionally short client area, preserve access by
+   scrolling the main pane instead of clipping the fixed composer. */
+@media(max-height:500px){
+  .main:has(#panel-chat:not([hidden])){overflow-y:auto}
+  #panel-chat{flex:1 0 auto;min-height:310px}
+}
